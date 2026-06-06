@@ -272,7 +272,7 @@ class GPUConverterApp:
                  font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
-        self.codec_var = tk.StringVar(value="H.264 (NVENC)")
+        self.codec_var = tk.StringVar(value="HEVC / H.265 (NVENC)")
         codec_combo = ttk.Combobox(codec_frame, textvariable=self.codec_var,
                                    values=list(CODECS.keys()), state="readonly",
                                    font=("Segoe UI", 10), width=22)
@@ -323,7 +323,7 @@ class GPUConverterApp:
             scale_frame, from_=25, to=100, orient="horizontal",
             variable=self.scale_var, showvalue=False,
             bg=COLORS["bg_dark"], fg=COLORS["text"],
-            troughcolor=COLORS["slider_track"], activebackground=COLORS["accent"],
+            troughcolor="#ffffff", activebackground=COLORS["accent"],
             highlightthickness=0, sliderrelief="flat", length=400,
             command=self._on_scale_change
         )
@@ -361,7 +361,7 @@ class GPUConverterApp:
             quality_frame, from_=15, to=40, orient="horizontal",
             variable=self.quality_var, showvalue=False,
             bg=COLORS["bg_dark"], fg=COLORS["text"],
-            troughcolor=COLORS["slider_track"], activebackground=COLORS["accent"],
+            troughcolor="#ffffff", activebackground=COLORS["accent"],
             highlightthickness=0, sliderrelief="flat", length=400,
             command=self._on_quality_change
         )
