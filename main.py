@@ -38,6 +38,7 @@ COLORS = {
     "error":        "#dc3545",
     "border":       "#dee2e6",
     "slider_track": "#e9ecef",
+    "progress_trough": "#e9ecef",
 }
 
 # コーデック定義
@@ -212,6 +213,17 @@ class GPUConverterApp:
         self._init_no_audio = no_audio
         self._auto_start = auto_start
 
+        # UI用ttkスタイルの設定（完全ダークモード専用）
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure(".", background=COLORS["bg_dark"], foreground=COLORS["text"], 
+                        fieldbackground=COLORS["bg_input"], selectbackground=COLORS["accent"], 
+                        selectforeground=COLORS["text_bright"], bordercolor=COLORS["border"], 
+                        darkcolor=COLORS["border"], lightcolor=COLORS["border"])
+        style.map("TCombobox", fieldbackground=[("readonly", COLORS["bg_input"])], selectbackground=[("readonly", COLORS["accent"])], selectforeground=[("readonly", COLORS["text_bright"])])
+        style.configure("Horizontal.TScale", background=COLORS["accent"], troughcolor=COLORS["progress_trough"])
+        style.configure("Custom.Horizontal.TProgressbar", troughcolor=COLORS["progress_trough"], background=COLORS["accent"], thickness=8)
+
         # UI構築
         self._build_ui()
 
@@ -227,6 +239,28 @@ class GPUConverterApp:
         x = pointer_x - (w // 2)
         y = pointer_y - (h // 2)
         self.root.geometry(f"+{x}+{y}")
+
+        # ウィンドウのどこでもドラッグ移動できるように設定
+        self._enable_window_drag()
+
+    def _enable_window_drag(self):
+        def start_drag(event):
+            ignore_classes = ("Button", "TButton", "TCombobox", "TScale", "Radiobutton", "TRadiobutton", "Checkbutton", "TCheckbutton")
+            if event.widget.winfo_class() in ignore_classes:
+                self.root._drag_start_x = None
+                return
+            self.root._drag_start_x = event.x_root - self.root.winfo_x()
+            self.root._drag_start_y = event.y_root - self.root.winfo_y()
+
+        def dragging(event):
+            if getattr(self.root, '_drag_start_x', None) is None:
+                return
+            x = event.x_root - self.root._drag_start_x
+            y = event.y_root - self.root._drag_start_y
+            self.root.geometry(f"+{x}+{y}")
+
+        self.root.bind("<ButtonPress-1>", start_drag)
+        self.root.bind("<B1-Motion>", dragging)
 
     # ─────────────────────────────────────────
     # UI構築
@@ -459,14 +493,7 @@ class GPUConverterApp:
         # 進捗バー
         self.progress_var = tk.DoubleVar(value=0)
 
-        style = ttk.Style()
-        style.theme_use("default")
-        style.configure(
-            "Custom.Horizontal.TProgressbar",
-            troughcolor=COLORS["slider_track"],
-            background=COLORS["accent"],
-            thickness=8,
-        )
+        # ttkスタイルは__init__で設定済み
 
         self.progress_bar = ttk.Progressbar(
             progress_frame, variable=self.progress_var,

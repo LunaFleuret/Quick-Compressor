@@ -223,7 +223,7 @@ class RegistrationApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("GPU動画コンバーター - メニュー登録")
-        self.root.configure(bg="#1a1a2e")
+        self.root.configure(bg="#f0f2f5")
         self.root.resizable(False, False)
 
         # DPI対応
@@ -243,58 +243,80 @@ class RegistrationApp:
         y = (self.root.winfo_screenheight() // 2) - (h // 2)
         self.root.geometry(f"+{x}+{y}")
 
+        # ウィンドウのどこでもドラッグ移動できるように設定
+        self._enable_window_drag()
+
+    def _enable_window_drag(self):
+        def start_drag(event):
+            ignore_classes = ("Button", "TButton", "TCombobox", "TScale", "Radiobutton", "TRadiobutton", "Checkbutton", "TCheckbutton")
+            if event.widget.winfo_class() in ignore_classes:
+                self.root._drag_start_x = None
+                return
+            self.root._drag_start_x = event.x_root - self.root.winfo_x()
+            self.root._drag_start_y = event.y_root - self.root.winfo_y()
+
+        def dragging(event):
+            if getattr(self.root, '_drag_start_x', None) is None:
+                return
+            x = event.x_root - self.root._drag_start_x
+            y = event.y_root - self.root._drag_start_y
+            self.root.geometry(f"+{x}+{y}")
+
+        self.root.bind("<ButtonPress-1>", start_drag)
+        self.root.bind("<B1-Motion>", dragging)
+
     def _build_ui(self):
-        main = tk.Frame(self.root, bg="#1a1a2e", padx=24, pady=20)
+        main = tk.Frame(self.root, bg="#f0f2f5", padx=24, pady=20)
         main.pack(fill="both", expand=True)
 
         # タイトル
         tk.Label(main, text="⚡ GPU動画コンバーター",
-                 font=("Segoe UI", 16, "bold"), fg="#0096ff", bg="#1a1a2e"
+                 font=("Segoe UI", 16, "bold"), fg="#005fb8", bg="#f0f2f5"
                  ).pack(anchor="w", pady=(0, 4))
 
         tk.Label(main, text="右クリックメニューへの登録・解除（管理者権限不要）",
-                 font=("Segoe UI", 10), fg="#8b8fa3", bg="#1a1a2e"
+                 font=("Segoe UI", 10), fg="#6c757d", bg="#f0f2f5"
                  ).pack(anchor="w", pady=(0, 16))
 
         # 情報カード
-        info_card = tk.Frame(main, bg="#16213e", padx=12, pady=10,
-                             highlightbackground="#2a2a4a", highlightthickness=1)
+        info_card = tk.Frame(main, bg="#ffffff", padx=12, pady=10,
+                             highlightbackground="#dee2e6", highlightthickness=1)
         info_card.pack(fill="x", pady=(0, 12))
 
         tk.Label(info_card, text=f"Python: {PYTHONW_EXE}",
-                 font=("Segoe UI", 8), fg="#8b8fa3", bg="#16213e", anchor="w",
+                 font=("Segoe UI", 8), fg="#6c757d", bg="#ffffff", anchor="w",
                  wraplength=450).pack(fill="x")
         tk.Label(info_card, text=f"Script: {MAIN_SCRIPT}",
-                 font=("Segoe UI", 8), fg="#8b8fa3", bg="#16213e", anchor="w",
+                 font=("Segoe UI", 8), fg="#6c757d", bg="#ffffff", anchor="w",
                  wraplength=450).pack(fill="x")
         tk.Label(info_card, text="登録先: HKEY_CURRENT_USER\\Software\\Classes（管理者権限不要）",
-                 font=("Segoe UI", 8), fg="#00d26a", bg="#16213e", anchor="w").pack(fill="x", pady=(4, 0))
+                 font=("Segoe UI", 8), fg="#198754", bg="#ffffff", anchor="w").pack(fill="x", pady=(4, 0))
 
         # 現在の登録状態
         status = check_registration_status()
-        status_card = tk.Frame(main, bg="#16213e", padx=12, pady=10,
-                               highlightbackground="#2a2a4a", highlightthickness=1)
+        status_card = tk.Frame(main, bg="#ffffff", padx=12, pady=10,
+                               highlightbackground="#dee2e6", highlightthickness=1)
         status_card.pack(fill="x", pady=(0, 16))
 
         tk.Label(status_card, text="登録状態:",
-                 font=("Segoe UI", 10, "bold"), fg="#e8e8e8", bg="#16213e"
+                 font=("Segoe UI", 10, "bold"), fg="#212529", bg="#ffffff"
                  ).pack(anchor="w", pady=(0, 4))
 
         for ext, is_registered in status.items():
-            color = "#00d26a" if is_registered else "#8b8fa3"
+            color = "#198754" if is_registered else "#6c757d"
             symbol = "●" if is_registered else "○"
             tk.Label(status_card, text=f"  {symbol}  {ext}",
-                     font=("Segoe UI", 9), fg=color, bg="#16213e"
+                     font=("Segoe UI", 9), fg=color, bg="#ffffff"
                      ).pack(anchor="w")
 
         # ボタン
-        btn_frame = tk.Frame(main, bg="#1a1a2e")
+        btn_frame = tk.Frame(main, bg="#f0f2f5")
         btn_frame.pack(fill="x", pady=(8, 0))
 
         register_btn = tk.Button(
             btn_frame, text="✅ 登録する",
             font=("Segoe UI", 12, "bold"), fg="#ffffff",
-            bg="#00d26a", activebackground="#00b85c",
+            bg="#198754", activebackground="#157347",
             relief="flat", padx=24, pady=8, cursor="hand2",
             command=self._register,
         )
@@ -303,7 +325,7 @@ class RegistrationApp:
         unregister_btn = tk.Button(
             btn_frame, text="❌ 解除する",
             font=("Segoe UI", 12, "bold"), fg="#ffffff",
-            bg="#ff4757", activebackground="#ff2e3f",
+            bg="#dc3545", activebackground="#bb2d3b",
             relief="flat", padx=24, pady=8, cursor="hand2",
             command=self._unregister,
         )
@@ -312,7 +334,7 @@ class RegistrationApp:
         # ステータスラベル
         self.status_label = tk.Label(
             main, text="",
-            font=("Segoe UI", 9), fg="#8b8fa3", bg="#1a1a2e",
+            font=("Segoe UI", 9), fg="#6c757d", bg="#f0f2f5",
             wraplength=450, anchor="w"
         )
         self.status_label.pack(fill="x", pady=(12, 0))
@@ -323,10 +345,10 @@ class RegistrationApp:
             msg = f"✅ {len(registered)} 個の拡張子に登録しました: {', '.join(registered)}"
             if errors:
                 msg += f"\n⚠️ 一部エラー: {'; '.join(errors)}"
-            self.status_label.configure(text=msg, fg="#00d26a")
+            self.status_label.configure(text=msg, fg="#198754")
         elif errors:
             self.status_label.configure(
-                text=f"❌ 登録に失敗しました: {'; '.join(errors)}", fg="#ff4757"
+                text=f"❌ 登録に失敗しました: {'; '.join(errors)}", fg="#dc3545"
             )
 
         # UIを更新
@@ -339,10 +361,10 @@ class RegistrationApp:
         removed, errors = unregister_context_menu()
         if removed:
             msg = f"✅ {len(removed)} 個の拡張子から解除しました: {', '.join(removed)}"
-            self.status_label.configure(text=msg, fg="#00d26a")
+            self.status_label.configure(text=msg, fg="#198754")
         elif errors:
             self.status_label.configure(
-                text=f"❌ 解除に失敗しました: {'; '.join(errors)}", fg="#ff4757"
+                text=f"❌ 解除に失敗しました: {'; '.join(errors)}", fg="#dc3545"
             )
 
         # UIを更新
