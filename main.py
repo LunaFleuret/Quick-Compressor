@@ -321,6 +321,17 @@ class GPUConverterApp:
         )
         preset_btn.pack(side="right", pady=(8, 0), padx=(0, 8))
 
+        preset_manage_btn = tk.Button(
+            title_frame, text="📋 プリセット管理",
+            font=("Segoe UI", 9), fg=COLORS["accent"],
+            bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
+            activeforeground=COLORS["accent"],
+            relief="flat", cursor="hand2", padx=8, pady=2,
+            highlightbackground=COLORS["border"], highlightthickness=1,
+            command=self._open_preset_manager,
+        )
+        preset_manage_btn.pack(side="right", pady=(8, 0), padx=(0, 8))
+
         tk.Label(
             title_frame, text="NVIDIA NVENC",
             font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
@@ -928,13 +939,191 @@ class GPUConverterApp:
                 activebackground=COLORS["accent_hover"],
             )
 
+    # ─────────────────────────────────────────
+    # プリセット管理ダイアログ
+    # ─────────────────────────────────────────
+    def _open_preset_manager(self):
+        if hasattr(self, '_manager_window') and self._manager_window.winfo_exists():
+            self._manager_window.lift()
+            self._manager_window.focus_force()
+            return
+
+        win = tk.Toplevel(self.root)
+        self._manager_window = win
+        win.title("📋 プリセット管理")
+        win.configure(bg=COLORS["bg_dark"])
+        win.geometry("400x480")
+        win.transient(self.root)
+        win.grab_set()
+
+        pad = tk.Frame(win, bg=COLORS["bg_dark"], padx=20, pady=16)
+        pad.pack(fill="both", expand=True)
+
+        tk.Label(
+            pad, text="プリセット一覧",
+            font=("Segoe UI", 12, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+        ).pack(anchor="w", pady=(0, 8))
+
+        list_frame = tk.Frame(pad, bg=COLORS["bg_card"], highlightbackground=COLORS["border"], highlightthickness=1)
+        list_frame.pack(fill="both", expand=True, pady=(0, 12))
+
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side="right", fill="y")
+
+        self.preset_listbox = tk.Listbox(
+            list_frame, font=("Segoe UI", 10), bg=COLORS["bg_input"], fg=COLORS["text"],
+            selectbackground=COLORS["accent"], selectforeground=COLORS["text_bright"],
+            relief="flat", borderwidth=0, highlightthickness=0,
+            yscrollcommand=scrollbar.set
+        )
+        self.preset_listbox.pack(side="left", fill="both", expand=True, padx=2, pady=2)
+        scrollbar.config(command=self.preset_listbox.yview)
+
+        edit_frame = tk.Frame(pad, bg=COLORS["bg_dark"])
+        edit_frame.pack(fill="x")
+
+        tk.Label(edit_frame, text="選択中の名前を変更:", font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_dark"]).pack(anchor="w")
+        
+        rename_frame = tk.Frame(edit_frame, bg=COLORS["bg_dark"])
+        rename_frame.pack(fill="x", pady=(4, 12))
+        
+        self.preset_name_var = tk.StringVar()
+        name_entry = tk.Entry(
+            rename_frame, textvariable=self.preset_name_var,
+            font=("Segoe UI", 10), bg=COLORS["bg_input"], fg=COLORS["text"],
+            relief="flat", highlightbackground=COLORS["border"], highlightthickness=1,
+            insertbackground=COLORS["text"]
+        )
+        name_entry.pack(side="left", fill="x", expand=True, ipady=4)
+
+        rename_btn = tk.Button(
+            rename_frame, text="変更",
+            font=("Segoe UI", 9), fg=COLORS["text_bright"], bg=COLORS["accent"],
+            activebackground=COLORS["accent_hover"], activeforeground=COLORS["text_bright"],
+            relief="flat", cursor="hand2", padx=12,
+            command=self._rename_preset
+        )
+        rename_btn.pack(side="left", padx=(8, 0))
+
+        action_frame = tk.Frame(pad, bg=COLORS["bg_dark"])
+        action_frame.pack(fill="x")
+
+        delete_btn = tk.Button(
+            action_frame, text="🗑 削除",
+            font=("Segoe UI", 9), fg=COLORS["error"], bg=COLORS["bg_card"],
+            activebackground=COLORS["bg_input"], activeforeground=COLORS["error"],
+            relief="flat", cursor="hand2", padx=12, pady=6,
+            highlightbackground=COLORS["border"], highlightthickness=1,
+            command=self._delete_preset
+        )
+        delete_btn.pack(side="left")
+
+        close_btn = tk.Button(
+            action_frame, text="閉じる",
+            font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_card"],
+            activebackground=COLORS["bg_input"], activeforeground=COLORS["text_bright"],
+            relief="flat", cursor="hand2", padx=16, pady=6,
+            command=win.destroy
+        )
+        close_btn.pack(side="right")
+
+        self.preset_listbox.bind("<<ListboxSelect>>", self._on_preset_select)
+        
+        win.update_idletasks()
+        x = self.root.winfo_x() + 50
+        y = self.root.winfo_y() + 50
+        win.geometry(f"+{x}+{y}")
+
+        self._refresh_preset_list()
+
+    def _get_presets_data(self):
+        presets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "presets.json")
+        default_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default_presets.json")
+        
+        if not os.path.exists(presets_path) and os.path.exists(default_path):
+            try:
+                import shutil
+                shutil.copy2(default_path, presets_path)
+            except Exception:
+                pass
+
+        presets = {}
+        if os.path.exists(presets_path):
+            try:
+                with open(presets_path, "r", encoding="utf-8") as f:
+                    presets = json.load(f)
+            except Exception:
+                pass
+        return presets_path, presets
+
+    def _save_presets_data(self, presets_path, presets_data):
+        try:
+            with open(presets_path, "w", encoding="utf-8") as f:
+                json.dump(presets_data, f, ensure_ascii=False, indent=4, sort_keys=True)
+            script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "register_menu.py")
+            subprocess.run([sys.executable, script_path, "--register"], check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            return True
+        except Exception as e:
+            messagebox.showerror("エラー", f"保存またはレジストリ更新に失敗しました:\n{e}")
+            return False
+
+    def _refresh_preset_list(self):
+        self.preset_listbox.delete(0, tk.END)
+        _, presets = self._get_presets_data()
+        for name in sorted(presets.keys()):
+            self.preset_listbox.insert(tk.END, name)
+
+    def _on_preset_select(self, event):
+        selection = self.preset_listbox.curselection()
+        if selection:
+            name = self.preset_listbox.get(selection[0])
+            self.preset_name_var.set(name)
+
+    def _rename_preset(self):
+        selection = self.preset_listbox.curselection()
+        if not selection:
+            return
+        
+        old_name = self.preset_listbox.get(selection[0])
+        new_name = self.preset_name_var.get().strip()
+        
+        if not new_name or new_name == old_name:
+            return
+            
+        path, presets = self._get_presets_data()
+        if new_name in presets:
+            messagebox.showwarning("警告", "その名前のプリセットは既に存在します。")
+            return
+            
+        if old_name in presets:
+            presets[new_name] = presets.pop(old_name)
+            if self._save_presets_data(path, presets):
+                self._refresh_preset_list()
+                self.preset_name_var.set("")
+                messagebox.showinfo("完了", "名前を変更し、メニューを更新しました！")
+
+    def _delete_preset(self):
+        selection = self.preset_listbox.curselection()
+        if not selection:
+            return
+            
+        name = self.preset_listbox.get(selection[0])
+        if messagebox.askyesno("確認", f"プリセット「{name}」を削除しますか？"):
+            path, presets = self._get_presets_data()
+            if name in presets:
+                del presets[name]
+                if self._save_presets_data(path, presets):
+                    self._refresh_preset_list()
+                    self.preset_name_var.set("")
+                    messagebox.showinfo("完了", "削除し、メニューを更新しました！")
+
     def _save_preset(self):
         from tkinter import simpledialog
         name = simpledialog.askstring("プリセット名", "プリセットの名前を入力してください\n（例: Discord用、Steam用）")
         if not name:
             return
         
-        presets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "user_presets.json")
+        presets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "presets.json")
         user_presets = {}
         if os.path.exists(presets_path):
             try:
@@ -963,7 +1152,7 @@ class GPUConverterApp:
         
         try:
             with open(presets_path, "w", encoding="utf-8") as f:
-                json.dump(user_presets, f, ensure_ascii=False, indent=4)
+                json.dump(user_presets, f, ensure_ascii=False, indent=4, sort_keys=True)
         except Exception as e:
             messagebox.showerror("エラー", f"プリセットの保存に失敗しました:\n{e}")
             return

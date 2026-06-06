@@ -44,31 +44,37 @@ REG_ROOT = winreg.HKEY_CURRENT_USER
 REG_ROOT_PATH = r"Software\Classes"
 
 
-def load_user_presets():
-    presets_path = os.path.join(SCRIPT_DIR, "user_presets.json")
+def load_all_presets():
+    presets_path = os.path.join(SCRIPT_DIR, "presets.json")
+    default_path = os.path.join(SCRIPT_DIR, "default_presets.json")
+    
+    if not os.path.exists(presets_path) and os.path.exists(default_path):
+        try:
+            import shutil
+            shutil.copy2(default_path, presets_path)
+        except Exception:
+            pass
+            
+    presets = {}
     if os.path.exists(presets_path):
         try:
             with open(presets_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
+                presets.update(json.load(f))
+        except Exception:
             pass
-    return {}
+            
+    return presets
 
 def register_context_menu():
     """右クリックメニューに登録（HKCU - 管理者権限不要）"""
     # GUI起動用
     cmd_gui = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1"'
     
-    presets = [
-        {"id": "Preset1", "name": "CQ35最小サイズ", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --auto-close --fps 24 --preset p7 --audio-mode reencode --cq 35'},
-        {"id": "Preset2", "name": "CQ35最小サイズ 720p", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --auto-close --fps 24 --resolution 720p --preset p7 --audio-mode reencode --cq 35'},
-        {"id": "Preset3", "name": "Discord用(10MB)", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --auto-close --fps 24 --preset p7 --audio-mode reencode --target-size-mb 10 --codec "H.264 (NVENC)"'},
-        {"id": "Preset4", "name": "Steam用(30MB)", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --auto-close --fps 24 --preset p7 --audio-mode reencode --target-size-mb 30'}
-    ]
+    presets = []
     
-    user_presets = load_user_presets()
-    idx = 5
-    for name, cfg in user_presets.items():
+    all_presets = load_all_presets()
+    idx = 1
+    for name, cfg in sorted(all_presets.items()):
         cmd = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto'
         if cfg.get("fps") and cfg.get("fps") != "元のまま":
             cmd += f' --fps {cfg.get("fps")}'
