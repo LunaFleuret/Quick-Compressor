@@ -49,6 +49,7 @@ CODECS = {
 }
 
 FRAME_RATES = ["元のまま", "24", "30", "60"]
+RESOLUTIONS = ["元のまま", "1080p", "720p", "480p"]
 
 # CUVIDデコーダーマッピング（GPU読み込み最適化用）
 CUVID_DECODERS = {
@@ -175,7 +176,7 @@ class GPUConverterApp:
                  auto_start: bool = False,
                  preset: str = "p4",
                  fps: str = "元のまま",
-                 scale: int = 100,
+                 resolution: str = "元のまま",
                  cq: int = 24,
                  audio_mode: str = "copy",
                  no_audio: bool = False):
@@ -208,7 +209,7 @@ class GPUConverterApp:
 
         # UI用初期値保持
         self._init_fps = fps
-        self._init_scale = scale
+        self._init_resolution = resolution
         self._init_cq = cq
         self._init_no_audio = no_audio
         self._auto_start = auto_start
@@ -222,6 +223,7 @@ class GPUConverterApp:
                         darkcolor=COLORS["border"], lightcolor=COLORS["border"])
         style.map("TCombobox", fieldbackground=[("readonly", COLORS["bg_input"])], selectbackground=[("readonly", COLORS["accent"])], selectforeground=[("readonly", COLORS["text_bright"])])
         style.configure("Horizontal.TScale", background=COLORS["accent"], troughcolor=COLORS["progress_trough"])
+        style.map("Horizontal.TScale", background=[("active", COLORS["accent"])])
         style.configure("Custom.Horizontal.TProgressbar", troughcolor=COLORS["progress_trough"], background=COLORS["accent"], thickness=8)
 
         # UI構築
@@ -394,38 +396,37 @@ class GPUConverterApp:
             )
             btn.pack(side="left", padx=(0, 4))
 
-        # --- 解像度スケール ---
-        scale_frame = tk.Frame(settings_frame, bg=COLORS["bg_dark"])
-        scale_frame.pack(fill="x", pady=(0, 12))
+        # --- 解像度 ---
+        resolution_frame = tk.Frame(settings_frame, bg=COLORS["bg_dark"])
+        resolution_frame.pack(fill="x", pady=(0, 12))
 
-        scale_label_frame = tk.Frame(scale_frame, bg=COLORS["bg_dark"])
-        scale_label_frame.pack(fill="x")
-
-        tk.Label(scale_label_frame, text="解像度スケール",
+        tk.Label(resolution_frame, text="解像度",
                  font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
-                 ).pack(side="left")
+                 ).pack(anchor="w")
 
-        self.scale_value_label = tk.Label(
-            scale_label_frame, text="100%",
-            font=("Segoe UI", 10, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
-        )
-        self.scale_value_label.pack(side="right")
+        self.resolution_var = tk.StringVar(value=self._init_resolution)
+        resolution_btn_frame = tk.Frame(resolution_frame, bg=COLORS["bg_dark"])
+        resolution_btn_frame.pack(fill="x", pady=(4, 0))
 
-        self.scale_var = tk.IntVar(value=self._init_scale)
-        self.scale_slider = ttk.Scale(
-            scale_frame, from_=25, to=100, orient="horizontal",
-            variable=self.scale_var, length=400,
-            command=self._on_scale_change
-        )
-        self.scale_slider.pack(fill="x", pady=(4, 0))
+        for res_option in RESOLUTIONS:
+            btn = tk.Radiobutton(
+                resolution_btn_frame, text=res_option, variable=self.resolution_var, value=res_option,
+                font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_dark"],
+                selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
+                activeforeground=COLORS["accent"], indicatoron=0,
+                padx=10, pady=4, relief="flat",
+                highlightbackground=COLORS["border"], highlightthickness=1,
+                command=self._on_resolution_change
+            )
+            btn.pack(side="left", padx=(0, 4))
 
-        # 解像度変換後のプレビュー表示
-        self.scale_preview_label = tk.Label(
-            scale_frame,
+        # 解像度変換のプレビュー表示
+        self.resolution_preview_label = tk.Label(
+            resolution_frame,
             text=f"{self.video_info['width']}×{self.video_info['height']} → {self.video_info['width']}×{self.video_info['height']}",
             font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
         )
-        self.scale_preview_label.pack(anchor="w")
+        self.resolution_preview_label.pack(anchor="w")
 
         # --- 画質 (CQP) ---
         quality_frame = tk.Frame(settings_frame, bg=COLORS["bg_dark"])
@@ -481,8 +482,8 @@ class GPUConverterApp:
             self.audio_var.set(False)
             audio_check.configure(text="音声を含める (元の動画に音声なし)")
 
-        # 初期値に基づくラベル表示の更新
-        self._on_scale_change(self._init_scale)
+        # 初期状態のプレビュー反映
+        self._on_resolution_change()
         self._on_quality_change(self._init_cq)
 
     def _build_progress_area(self, parent):
@@ -632,16 +633,28 @@ class GPUConverterApp:
     # ─────────────────────────────────────────
     # イベントハンドラ
     # ─────────────────────────────────────────
-    def _on_scale_change(self, value):
-        pct = int(float(value))
-        self.scale_value_label.configure(text=f"{pct}%")
-        new_w = int(self.video_info["width"] * pct / 100)
-        new_h = int(self.video_info["height"] * pct / 100)
-        # 偶数にする (FFmpegの制約)
-        new_w = new_w - (new_w % 2)
-        new_h = new_h - (new_h % 2)
-        self.scale_preview_label.configure(
-            text=f"{self.video_info['width']}×{self.video_info['height']} → {new_w}×{new_h}"
+    def _on_resolution_change(self, *args):
+        res_val = self.resolution_var.get()
+        orig_w = self.video_info["width"]
+        orig_h = self.video_info["height"]
+        
+        if res_val == "元のまま":
+            new_w = orig_w
+            new_h = orig_h
+        else:
+            target_h = int(res_val.replace("p", ""))
+            if target_h != orig_h:
+                new_w = int(orig_w * (target_h / orig_h))
+                new_h = target_h
+                # 偶数丸め
+                new_w = new_w - (new_w % 2)
+                new_h = new_h - (new_h % 2)
+            else:
+                new_w = orig_w
+                new_h = orig_h
+
+        self.resolution_preview_label.configure(
+            text=f"{orig_w}×{orig_h} → {new_w}×{new_h}"
         )
 
     def _on_quality_change(self, value):
@@ -719,17 +732,22 @@ class GPUConverterApp:
         # ビデオフィルター
         filters = []
 
-        # 解像度スケール
-        scale_pct = self.scale_var.get()
-        if scale_pct < 100:
-            new_w = int(self.video_info["width"] * scale_pct / 100)
-            new_h = int(self.video_info["height"] * scale_pct / 100)
-            new_w = new_w - (new_w % 2)
-            new_h = new_h - (new_h % 2)
-            if use_gpu_decode:
-                filters.append(f"scale_cuda={new_w}:{new_h}")
-            else:
-                filters.append(f"scale={new_w}:{new_h}")
+        # 解像度スケーリング
+        res_val = self.resolution_var.get()
+        if res_val != "元のまま":
+            target_h = int(res_val.replace("p", ""))
+            orig_w = self.video_info["width"]
+            orig_h = self.video_info["height"]
+            
+            if target_h != orig_h:
+                new_w = int(orig_w * (target_h / orig_h))
+                new_h = target_h
+                new_w = new_w - (new_w % 2)
+                new_h = new_h - (new_h % 2)
+                if use_gpu_decode:
+                    filters.append(f"scale_cuda={new_w}:{new_h}")
+                else:
+                    filters.append(f"scale={new_w}:{new_h}")
 
         if filters:
             cmd.extend(["-vf", ",".join(filters)])
@@ -870,7 +888,7 @@ def main():
     parser.add_argument("input", nargs="?", help="入力ファイル")
     parser.add_argument("--preset", default="p4", help="エンコードプリセット")
     parser.add_argument("--fps", default="元のまま", help="フレームレート")
-    parser.add_argument("--scale", type=int, default=100, help="解像度スケール(%)")
+    parser.add_argument("--resolution", default="元のまま", help="解像度 (1080p, 720p, etc.)")
     parser.add_argument("--cq", type=int, default=24, help="画質(CQ値)")
     parser.add_argument("--audio-mode", choices=["copy", "reencode"], default="copy", help="音声処理モード")
     parser.add_argument("--no-audio", action="store_true", help="音声を含めない")
@@ -905,7 +923,7 @@ def main():
         auto_start=args.auto,
         preset=args.preset,
         fps=args.fps,
-        scale=args.scale,
+        resolution=args.resolution,
         cq=args.cq,
         audio_mode=args.audio_mode,
         no_audio=args.no_audio

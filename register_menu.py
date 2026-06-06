@@ -48,7 +48,9 @@ def register_context_menu():
     # GUI起動用
     cmd_gui = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1"'
     # CQ35最小サイズ用
-    cmd_preset1 = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --scale 100 --preset p7 --audio-mode reencode --cq 35'
+    cmd_preset1 = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --preset p7 --audio-mode reencode --cq 35'
+    # CQ35最小サイズ 720p用
+    cmd_preset2 = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --resolution 720p --preset p7 --audio-mode reencode --cq 35'
 
     registered = []
     errors = []
@@ -66,6 +68,16 @@ def register_context_menu():
         cmd_p1 = winreg.CreateKey(REG_ROOT, rf"{preset1_path}\command")
         winreg.SetValueEx(cmd_p1, "", 0, winreg.REG_SZ, cmd_preset1)
         winreg.CloseKey(cmd_p1)
+
+        # プリセット2: CQ35最小サイズ 720p
+        preset2_path = rf"{menu_key_path}\shell\Preset2"
+        key_p2 = winreg.CreateKey(REG_ROOT, preset2_path)
+        winreg.SetValueEx(key_p2, "MUIVerb", 0, winreg.REG_SZ, "CQ35最小サイズ 720p")
+        winreg.CloseKey(key_p2)
+        
+        cmd_p2 = winreg.CreateKey(REG_ROOT, rf"{preset2_path}\command")
+        winreg.SetValueEx(cmd_p2, "", 0, winreg.REG_SZ, cmd_preset2)
+        winreg.CloseKey(cmd_p2)
     except Exception as e:
         errors.append(f"Menu Definition: {str(e)}")
         return [], errors
@@ -135,6 +147,10 @@ def unregister_context_menu():
         try:
             winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset1\command")
             winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset1")
+        except FileNotFoundError: pass
+        try:
+            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset2\command")
+            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset2")
         except FileNotFoundError: pass
         try:
             winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\GUI\command")
