@@ -48,6 +48,29 @@ CODECS = {
 
 FRAME_RATES = ["元のまま", "24", "30", "60"]
 
+# CUVIDデコーダーマッピング（GPU読み込み最適化用）
+CUVID_DECODERS = {
+    "h264": "h264_cuvid",
+    "hevc": "hevc_cuvid",
+    "vp9": "vp9_cuvid",
+    "av1": "av1_cuvid",
+    "mpeg4": "mpeg4_cuvid",
+    "mpeg2video": "mpeg2_cuvid",
+    "mpeg1video": "mpeg1_cuvid",
+    "vp8": "vp8_cuvid",
+}
+
+# NVENCプリセット定義
+NVENC_PRESETS = [
+    ("p1", "最速（ファイル大）"),
+    ("p2", "高速"),
+    ("p3", "やや速い"),
+    ("p4", "標準（バランス）"),
+    ("p5", "やや遅い"),
+    ("p6", "低速"),
+    ("p7", "最遅（ファイル小）"),
+]
+
 
 # ─────────────────────────────────────────────
 # ユーティリティ関数
@@ -170,6 +193,10 @@ class GPUConverterApp:
             messagebox.showerror("エラー", f"動画の読み込みに失敗しました:\n{self.video_info['error']}")
             sys.exit(1)
 
+        # 詳細設定変数（デフォルト値）
+        self.preset_var = tk.StringVar(value="p4")
+        self.audio_mode_var = tk.StringVar(value="copy")
+
         # UI構築
         self._build_ui()
 
@@ -198,10 +225,22 @@ class GPUConverterApp:
             font=("Segoe UI", 18, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(side="left")
 
+        # 設定ボタン
+        settings_btn = tk.Button(
+            title_frame, text="⚙ 設定",
+            font=("Segoe UI", 9), fg=COLORS["text_dim"],
+            bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
+            activeforeground=COLORS["accent"],
+            relief="flat", cursor="hand2", padx=8, pady=2,
+            highlightbackground=COLORS["border"], highlightthickness=1,
+            command=self._open_settings,
+        )
+        settings_btn.pack(side="right", pady=(8, 0))
+
         tk.Label(
             title_frame, text="NVIDIA NVENC",
             font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
-        ).pack(side="right", pady=(8, 0))
+        ).pack(side="right", pady=(8, 0), padx=(0, 8))
 
         # --- ファイル情報カード ---
         self._build_file_info_card(main_frame)
@@ -381,7 +420,7 @@ class GPUConverterApp:
 
         self.audio_var = tk.BooleanVar(value=True)
         audio_check = tk.Checkbutton(
-            audio_frame, text="音声を含める (AAC 128kbps)",
+            audio_frame, text="音声を含める",
             variable=self.audio_var,
             font=("Segoe UI", 10), fg=COLORS["text"], bg=COLORS["bg_dark"],
             selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
@@ -452,6 +491,99 @@ class GPUConverterApp:
         # 初期状態では非表示
 
     # ─────────────────────────────────────────
+    # 設定ダイアログ
+    # ─────────────────────────────────────────
+    def _open_settings(self):
+        """詳細設定ダイアログを開く"""
+        if hasattr(self, '_settings_window') and self._settings_window.winfo_exists():
+            self._settings_window.lift()
+            self._settings_window.focus_force()
+            return
+
+        win = tk.Toplevel(self.root)
+        self._settings_window = win
+        win.title("⚙ 詳細設定")
+        win.configure(bg=COLORS["bg_dark"])
+        win.resizable(False, False)
+        win.transient(self.root)
+        win.grab_set()
+
+        pad = tk.Frame(win, bg=COLORS["bg_dark"], padx=20, pady=16)
+        pad.pack(fill="both", expand=True)
+
+        tk.Label(
+            pad, text="⚙ 詳細設定",
+            font=("Segoe UI", 14, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+        ).pack(anchor="w", pady=(0, 12))
+
+        # --- エンコードプリセット ---
+        preset_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
+                               highlightbackground=COLORS["border"], highlightthickness=1)
+        preset_card.pack(fill="x", pady=(0, 10))
+
+        tk.Label(
+            preset_card, text="エンコードプリセット",
+            font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
+        ).pack(anchor="w")
+
+        tk.Label(
+            preset_card,
+            text="速い → ファイルサイズ大  /  遅い → ファイルサイズ小",
+            font=("Segoe UI", 8), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
+        ).pack(anchor="w", pady=(0, 6))
+
+        for preset_val, preset_name in NVENC_PRESETS:
+            rb = tk.Radiobutton(
+                preset_card, text=f"{preset_val}  {preset_name}",
+                variable=self.preset_var, value=preset_val,
+                font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_card"],
+                selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_card"],
+                activeforeground=COLORS["accent"],
+            )
+            rb.pack(anchor="w")
+
+        # --- 音声処理モード ---
+        audio_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
+                              highlightbackground=COLORS["border"], highlightthickness=1)
+        audio_card.pack(fill="x", pady=(0, 10))
+
+        tk.Label(
+            audio_card, text="音声処理モード",
+            font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
+        ).pack(anchor="w", pady=(0, 6))
+
+        audio_modes = [
+            ("copy", "コピー（そのまま）— 高速・音質劣化なし"),
+            ("reencode", "再エンコード（AAC 128kbps）— 互換性が高い"),
+        ]
+        for mode_val, mode_name in audio_modes:
+            rb = tk.Radiobutton(
+                audio_card, text=mode_name,
+                variable=self.audio_mode_var, value=mode_val,
+                font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_card"],
+                selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_card"],
+                activeforeground=COLORS["accent"],
+            )
+            rb.pack(anchor="w")
+
+        # 閉じるボタン
+        close_btn = tk.Button(
+            pad, text="閉じる",
+            font=("Segoe UI", 10), fg=COLORS["text"],
+            bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
+            activeforeground=COLORS["text_bright"],
+            relief="flat", padx=20, pady=6, cursor="hand2",
+            command=win.destroy,
+        )
+        close_btn.pack(pady=(4, 0))
+
+        # ウィンドウを親の近くに配置
+        win.update_idletasks()
+        x = self.root.winfo_x() + 50
+        y = self.root.winfo_y() + 50
+        win.geometry(f"+{x}+{y}")
+
+    # ─────────────────────────────────────────
     # イベントハンドラ
     # ─────────────────────────────────────────
     def _on_scale_change(self, value):
@@ -512,7 +644,18 @@ class GPUConverterApp:
             self.output_path = str(input_p.parent / f"{input_p.stem}_converted_{counter}.{ext}")
             counter += 1
 
-        cmd = [FFMPEG_PATH, "-y", "-hwaccel", "cuda", "-i", self.input_path]
+        # GPU最適化: 入力コーデックに対応するCUVIDデコーダーで読み込み高速化
+        input_codec = self.video_info.get("codec", "")
+        cuvid_decoder = CUVID_DECODERS.get(input_codec)
+        use_gpu_decode = cuvid_decoder is not None
+
+        cmd = [FFMPEG_PATH, "-y"]
+        if use_gpu_decode:
+            cmd.extend(["-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
+                       "-c:v", cuvid_decoder])
+        else:
+            cmd.extend(["-hwaccel", "cuda"])
+        cmd.extend(["-i", self.input_path])
 
         # ビデオ設定
         cmd.extend(["-c:v", encoder])
@@ -524,8 +667,8 @@ class GPUConverterApp:
         elif encoder == "av1_nvenc":
             cmd.extend(["-cq", str(cq)])
 
-        # NVENC プリセット（品質とスピードのバランス）
-        cmd.extend(["-preset", "p4"])
+        # NVENC プリセット（設定ダイアログから取得）
+        cmd.extend(["-preset", self.preset_var.get()])
 
         # ビデオフィルター
         filters = []
@@ -537,7 +680,10 @@ class GPUConverterApp:
             new_h = int(self.video_info["height"] * scale_pct / 100)
             new_w = new_w - (new_w % 2)
             new_h = new_h - (new_h % 2)
-            filters.append(f"scale={new_w}:{new_h}")
+            if use_gpu_decode:
+                filters.append(f"scale_cuda={new_w}:{new_h}")
+            else:
+                filters.append(f"scale={new_w}:{new_h}")
 
         if filters:
             cmd.extend(["-vf", ",".join(filters)])
@@ -547,9 +693,12 @@ class GPUConverterApp:
         if fps_val != "元のまま":
             cmd.extend(["-r", fps_val])
 
-        # 音声
+        # 音声（設定ダイアログの音声モードに従う）
         if self.audio_var.get() and self.video_info.get("has_audio"):
-            cmd.extend(["-c:a", "aac", "-b:a", "128k"])
+            if self.audio_mode_var.get() == "copy":
+                cmd.extend(["-c:a", "copy"])
+            else:
+                cmd.extend(["-c:a", "aac", "-b:a", "128k"])
         else:
             cmd.append("-an")
 
