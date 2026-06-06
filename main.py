@@ -200,12 +200,13 @@ class GPUConverterApp:
         # UI構築
         self._build_ui()
 
-        # ウィンドウを画面中央に配置
+        # ウィンドウをマウスポインターがある位置（画面）に配置（マルチディスプレイ対応）
         self.root.update_idletasks()
         w = self.root.winfo_width()
         h = self.root.winfo_height()
-        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
-        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        pointer_x, pointer_y = self.root.winfo_pointerxy()
+        x = pointer_x - (w // 2)
+        y = pointer_y - (h // 2)
         self.root.geometry(f"+{x}+{y}")
 
     # ─────────────────────────────────────────
