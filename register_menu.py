@@ -62,7 +62,7 @@ def register_context_menu():
     presets = [
         {"id": "Preset1", "name": "CQ35最小サイズ", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --preset p7 --audio-mode reencode --cq 35'},
         {"id": "Preset2", "name": "CQ35最小サイズ 720p", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --resolution 720p --preset p7 --audio-mode reencode --cq 35'},
-        {"id": "Preset3", "name": "Discord用(10MB)", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --preset p7 --audio-mode reencode --target-size-mb 10'},
+        {"id": "Preset3", "name": "Discord用(10MB)", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --preset p7 --audio-mode reencode --target-size-mb 10 --codec "H.264 (NVENC)"'},
         {"id": "Preset4", "name": "Steam用(30MB)", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --preset p7 --audio-mode reencode --target-size-mb 30'}
     ]
     
