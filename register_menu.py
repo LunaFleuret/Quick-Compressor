@@ -1,0 +1,318 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+GPU Video Converter - レジストリ登録スクリプト
+右クリックメニュー（コンテキストメニュー）に「GPU動画変換で圧縮」を追加・削除します。
+
+HKEY_CURRENT_USER\\Software\\Classes を使用するため管理者権限は不要です。
+"""
+
+import sys
+import os
+import winreg
+import ctypes
+import tkinter as tk
+from tkinter import messagebox
+
+# ─────────────────────────────────────────────
+# 設定
+# ─────────────────────────────────────────────
+MENU_NAME = "GPU動画変換で圧縮"
+REGISTRY_KEY_NAME = "GPUVideoConverter"
+
+# 登録する動画拡張子
+VIDEO_EXTENSIONS = [
+    ".mp4", ".mkv", ".mov", ".avi", ".webm",
+    ".wmv", ".flv", ".ts", ".m2ts", ".m4v",
+]
+
+# main.py のパスを自動検出
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+MAIN_SCRIPT = os.path.join(SCRIPT_DIR, "main.py")
+
+# Python実行ファイルのパス（pythonw.exe を使うとコンソール窓が出ない）
+PYTHON_EXE = sys.executable
+PYTHONW_EXE = PYTHON_EXE.replace("python.exe", "pythonw.exe")
+if not os.path.exists(PYTHONW_EXE):
+    PYTHONW_EXE = PYTHON_EXE  # pythonw が見つからない場合は python を使用
+
+# レジストリのルート（HKCU\Software\Classes は管理者権限不要）
+REG_ROOT = winreg.HKEY_CURRENT_USER
+REG_ROOT_PATH = r"Software\Classes"
+
+
+def register_context_menu():
+    """右クリックメニューに登録（HKCU - 管理者権限不要）"""
+    command = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1"'
+    registered = []
+    errors = []
+
+    for ext in VIDEO_EXTENSIONS:
+        try:
+            # 方法1: SystemFileAssociations 経由（拡張子ベース）
+            key_path = rf"{REG_ROOT_PATH}\SystemFileAssociations\{ext}\shell\{REGISTRY_KEY_NAME}"
+
+            # メニュー項目の登録
+            key = winreg.CreateKey(REG_ROOT, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, MENU_NAME)
+            winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, "shell32.dll,176")
+            winreg.CloseKey(key)
+
+            # コマンドの登録
+            cmd_key = winreg.CreateKey(REG_ROOT, rf"{key_path}\command")
+            winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, command)
+            winreg.CloseKey(cmd_key)
+
+            registered.append(ext)
+        except Exception as e:
+            errors.append(f"{ext}: {str(e)}")
+
+    # 方法2: 全ファイル対象のフォールバック（*\shell に登録）
+    # これにより、拡張子ベースの登録が効かない場合でも動作する
+    try:
+        star_key_path = rf"{REG_ROOT_PATH}\*\shell\{REGISTRY_KEY_NAME}"
+        key = winreg.CreateKey(REG_ROOT, star_key_path)
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, MENU_NAME)
+        winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, "shell32.dll,176")
+        # AppliesTo で動画ファイルのみに制限
+        applies_to = " OR ".join([f'System.FileName:~<"{ext}"' for ext in VIDEO_EXTENSIONS])
+        winreg.SetValueEx(key, "AppliesTo", 0, winreg.REG_SZ, applies_to)
+        winreg.CloseKey(key)
+
+        cmd_key = winreg.CreateKey(REG_ROOT, rf"{star_key_path}\command")
+        winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, command)
+        winreg.CloseKey(cmd_key)
+    except Exception as e:
+        errors.append(f"*: {str(e)}")
+
+    return registered, errors
+
+
+def unregister_context_menu():
+    """右クリックメニューから削除"""
+    removed = []
+    errors = []
+
+    for ext in VIDEO_EXTENSIONS:
+        key_path = rf"{REG_ROOT_PATH}\SystemFileAssociations\{ext}\shell\{REGISTRY_KEY_NAME}"
+        try:
+            try:
+                winreg.DeleteKey(REG_ROOT, rf"{key_path}\command")
+            except FileNotFoundError:
+                pass
+            winreg.DeleteKey(REG_ROOT, key_path)
+            removed.append(ext)
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            errors.append(f"{ext}: {str(e)}")
+
+    # * キーも削除
+    star_key_path = rf"{REG_ROOT_PATH}\*\shell\{REGISTRY_KEY_NAME}"
+    try:
+        try:
+            winreg.DeleteKey(REG_ROOT, rf"{star_key_path}\command")
+        except FileNotFoundError:
+            pass
+        winreg.DeleteKey(REG_ROOT, star_key_path)
+        removed.append("*")
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        errors.append(f"*: {str(e)}")
+
+    return removed, errors
+
+
+def check_registration_status() -> dict:
+    """現在の登録状態をチェック"""
+    status = {}
+
+    # 拡張子ベース
+    for ext in VIDEO_EXTENSIONS:
+        key_path = rf"{REG_ROOT_PATH}\SystemFileAssociations\{ext}\shell\{REGISTRY_KEY_NAME}"
+        try:
+            key = winreg.OpenKey(REG_ROOT, key_path)
+            winreg.CloseKey(key)
+            status[ext] = True
+        except FileNotFoundError:
+            status[ext] = False
+
+    # * ベース
+    star_key_path = rf"{REG_ROOT_PATH}\*\shell\{REGISTRY_KEY_NAME}"
+    try:
+        key = winreg.OpenKey(REG_ROOT, star_key_path)
+        winreg.CloseKey(key)
+        status["* (全ファイル)"] = True
+    except FileNotFoundError:
+        status["* (全ファイル)"] = False
+
+    return status
+
+
+# ─────────────────────────────────────────────
+# GUI
+# ─────────────────────────────────────────────
+class RegistrationApp:
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title("GPU動画コンバーター - メニュー登録")
+        self.root.configure(bg="#1a1a2e")
+        self.root.resizable(False, False)
+
+        # DPI対応
+        try:
+            from ctypes import windll
+            windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            pass
+
+        self._build_ui()
+
+        # ウィンドウを画面中央に配置
+        self.root.update_idletasks()
+        w = self.root.winfo_width()
+        h = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (w // 2)
+        y = (self.root.winfo_screenheight() // 2) - (h // 2)
+        self.root.geometry(f"+{x}+{y}")
+
+    def _build_ui(self):
+        main = tk.Frame(self.root, bg="#1a1a2e", padx=24, pady=20)
+        main.pack(fill="both", expand=True)
+
+        # タイトル
+        tk.Label(main, text="⚡ GPU動画コンバーター",
+                 font=("Segoe UI", 16, "bold"), fg="#0096ff", bg="#1a1a2e"
+                 ).pack(anchor="w", pady=(0, 4))
+
+        tk.Label(main, text="右クリックメニューへの登録・解除（管理者権限不要）",
+                 font=("Segoe UI", 10), fg="#8b8fa3", bg="#1a1a2e"
+                 ).pack(anchor="w", pady=(0, 16))
+
+        # 情報カード
+        info_card = tk.Frame(main, bg="#16213e", padx=12, pady=10,
+                             highlightbackground="#2a2a4a", highlightthickness=1)
+        info_card.pack(fill="x", pady=(0, 12))
+
+        tk.Label(info_card, text=f"Python: {PYTHONW_EXE}",
+                 font=("Segoe UI", 8), fg="#8b8fa3", bg="#16213e", anchor="w",
+                 wraplength=450).pack(fill="x")
+        tk.Label(info_card, text=f"Script: {MAIN_SCRIPT}",
+                 font=("Segoe UI", 8), fg="#8b8fa3", bg="#16213e", anchor="w",
+                 wraplength=450).pack(fill="x")
+        tk.Label(info_card, text="登録先: HKEY_CURRENT_USER\\Software\\Classes（管理者権限不要）",
+                 font=("Segoe UI", 8), fg="#00d26a", bg="#16213e", anchor="w").pack(fill="x", pady=(4, 0))
+
+        # 現在の登録状態
+        status = check_registration_status()
+        status_card = tk.Frame(main, bg="#16213e", padx=12, pady=10,
+                               highlightbackground="#2a2a4a", highlightthickness=1)
+        status_card.pack(fill="x", pady=(0, 16))
+
+        tk.Label(status_card, text="登録状態:",
+                 font=("Segoe UI", 10, "bold"), fg="#e8e8e8", bg="#16213e"
+                 ).pack(anchor="w", pady=(0, 4))
+
+        for ext, is_registered in status.items():
+            color = "#00d26a" if is_registered else "#8b8fa3"
+            symbol = "●" if is_registered else "○"
+            tk.Label(status_card, text=f"  {symbol}  {ext}",
+                     font=("Segoe UI", 9), fg=color, bg="#16213e"
+                     ).pack(anchor="w")
+
+        # ボタン
+        btn_frame = tk.Frame(main, bg="#1a1a2e")
+        btn_frame.pack(fill="x", pady=(8, 0))
+
+        register_btn = tk.Button(
+            btn_frame, text="✅ 登録する",
+            font=("Segoe UI", 12, "bold"), fg="#ffffff",
+            bg="#00d26a", activebackground="#00b85c",
+            relief="flat", padx=24, pady=8, cursor="hand2",
+            command=self._register,
+        )
+        register_btn.pack(side="left", padx=(0, 8))
+
+        unregister_btn = tk.Button(
+            btn_frame, text="❌ 解除する",
+            font=("Segoe UI", 12, "bold"), fg="#ffffff",
+            bg="#ff4757", activebackground="#ff2e3f",
+            relief="flat", padx=24, pady=8, cursor="hand2",
+            command=self._unregister,
+        )
+        unregister_btn.pack(side="left")
+
+        # ステータスラベル
+        self.status_label = tk.Label(
+            main, text="",
+            font=("Segoe UI", 9), fg="#8b8fa3", bg="#1a1a2e",
+            wraplength=450, anchor="w"
+        )
+        self.status_label.pack(fill="x", pady=(12, 0))
+
+    def _register(self):
+        registered, errors = register_context_menu()
+        if registered:
+            msg = f"✅ {len(registered)} 個の拡張子に登録しました: {', '.join(registered)}"
+            if errors:
+                msg += f"\n⚠️ 一部エラー: {'; '.join(errors)}"
+            self.status_label.configure(text=msg, fg="#00d26a")
+        elif errors:
+            self.status_label.configure(
+                text=f"❌ 登録に失敗しました: {'; '.join(errors)}", fg="#ff4757"
+            )
+
+        # UIを更新
+        self.root.destroy()
+        new_root = tk.Tk()
+        RegistrationApp(new_root)
+        new_root.mainloop()
+
+    def _unregister(self):
+        removed, errors = unregister_context_menu()
+        if removed:
+            msg = f"✅ {len(removed)} 個の拡張子から解除しました: {', '.join(removed)}"
+            self.status_label.configure(text=msg, fg="#00d26a")
+        elif errors:
+            self.status_label.configure(
+                text=f"❌ 解除に失敗しました: {'; '.join(errors)}", fg="#ff4757"
+            )
+
+        # UIを更新
+        self.root.destroy()
+        new_root = tk.Tk()
+        RegistrationApp(new_root)
+        new_root.mainloop()
+
+
+def main():
+    # コマンドライン引数で直接登録・解除も可能
+    if len(sys.argv) > 1:
+        arg = sys.argv[1].lower()
+        if arg in ("--register", "-r"):
+            registered, errors = register_context_menu()
+            print(f"登録完了: {', '.join(registered)}")
+            if errors:
+                print(f"エラー: {'; '.join(errors)}")
+            return
+        elif arg in ("--unregister", "-u"):
+            removed, errors = unregister_context_menu()
+            print(f"解除完了: {', '.join(removed)}")
+            if errors:
+                print(f"エラー: {'; '.join(errors)}")
+            return
+        elif arg in ("--status", "-s"):
+            status = check_registration_status()
+            for ext, is_registered in status.items():
+                symbol = "●" if is_registered else "○"
+                print(f"  {symbol}  {ext}")
+            return
+
+    root = tk.Tk()
+    app = RegistrationApp(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
