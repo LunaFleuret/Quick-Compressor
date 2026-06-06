@@ -179,7 +179,8 @@ class GPUConverterApp:
                  resolution: str = "元のまま",
                  cq: int = 24,
                  audio_mode: str = "copy",
-                 no_audio: bool = False):
+                 no_audio: bool = False,
+                 target_size_mb: float = None):
         self.root = root
         self.input_path = input_path
         self.is_converting = False
@@ -213,6 +214,7 @@ class GPUConverterApp:
         self._init_cq = cq
         self._init_no_audio = no_audio
         self._auto_start = auto_start
+        self._target_size_mb = target_size_mb
 
         # UI用ttkスタイルの設定（完全ダークモード専用）
         style = ttk.Style()
@@ -719,12 +721,32 @@ class GPUConverterApp:
         # ビデオ設定
         cmd.extend(["-c:v", encoder])
 
-        # CQP (品質)
+        # CQP (品質) または VBR (容量指定)
         cq = self.quality_var.get()
-        if encoder in ("h264_nvenc", "hevc_nvenc"):
-            cmd.extend(["-rc", "constqp", "-qp", str(cq)])
-        elif encoder == "av1_nvenc":
-            cmd.extend(["-cq", str(cq)])
+        is_target_size_mode = False
+        video_kbps = 0
+        
+        if getattr(self, "_target_size_mb", None) is not None and self._target_size_mb > 0:
+            duration = self.video_info.get("duration", 0)
+            if duration > 0:
+                is_target_size_mode = True
+                audio_kbps = 64 if (self.audio_var.get() and self.video_info.get("has_audio")) else 0
+                # 容量超過を防ぐため、目標サイズの95%をターゲットにする（メタデータなどのマージン）
+                target_total_kbps = (self._target_size_mb * 0.95 * 8192) / duration
+                video_kbps = max(100, int(target_total_kbps - audio_kbps))
+                
+                cmd.extend([
+                    "-rc", "vbr",
+                    "-b:v", f"{video_kbps}k",
+                    "-maxrate", f"{video_kbps}k",
+                    "-bufsize", f"{video_kbps * 2}k"
+                ])
+                
+        if not is_target_size_mode:
+            if encoder in ("h264_nvenc", "hevc_nvenc"):
+                cmd.extend(["-rc", "constqp", "-qp", str(cq)])
+            elif encoder == "av1_nvenc":
+                cmd.extend(["-cq", str(cq)])
 
         # NVENC プリセット（設定ダイアログから取得）
         cmd.extend(["-preset", self.preset_var.get()])
@@ -734,6 +756,15 @@ class GPUConverterApp:
 
         # 解像度スケーリング
         res_val = self.resolution_var.get()
+        
+        # 容量指定モードで「元のまま」かつビットレートが低すぎる場合は自動ダウンスケール
+        if is_target_size_mode and res_val == "元のまま":
+            orig_h = self.video_info.get("height", 1080)
+            if video_kbps < 500:
+                res_val = "480p" if orig_h > 480 else res_val
+            elif video_kbps < 1500:
+                res_val = "720p" if orig_h > 720 else res_val
+        
         if res_val != "元のまま":
             target_h = int(res_val.replace("p", ""))
             orig_w = self.video_info["width"]
@@ -759,7 +790,10 @@ class GPUConverterApp:
 
         # 音声（設定ダイアログの音声モードに従う）
         if self.audio_var.get() and self.video_info.get("has_audio"):
-            if self.audio_mode_var.get() == "copy":
+            if is_target_size_mode:
+                # 目標サイズモード時は強制的に AAC 64kbps にして容量節約
+                cmd.extend(["-c:a", "aac", "-b:a", "64k"])
+            elif self.audio_mode_var.get() == "copy":
                 cmd.extend(["-c:a", "copy"])
             else:
                 cmd.extend(["-c:a", "aac", "-b:a", "128k"])
@@ -893,6 +927,7 @@ def main():
     parser.add_argument("--audio-mode", choices=["copy", "reencode"], default="copy", help="音声処理モード")
     parser.add_argument("--no-audio", action="store_true", help="音声を含めない")
     parser.add_argument("--auto", action="store_true", help="自動変換開始")
+    parser.add_argument("--target-size-mb", type=float, default=None, help="目標ファイルサイズ(MB)")
     
     args, _ = parser.parse_known_args()
 
@@ -926,7 +961,8 @@ def main():
         resolution=args.resolution,
         cq=args.cq,
         audio_mode=args.audio_mode,
-        no_audio=args.no_audio
+        no_audio=args.no_audio,
+        target_size_mb=args.target_size_mb
     )
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()

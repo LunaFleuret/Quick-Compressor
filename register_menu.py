@@ -47,10 +47,14 @@ def register_context_menu():
     """右クリックメニューに登録（HKCU - 管理者権限不要）"""
     # GUI起動用
     cmd_gui = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1"'
-    # CQ35最小サイズ用
+    # プリセット1: CQ35最小サイズ用
     cmd_preset1 = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --preset p7 --audio-mode reencode --cq 35'
-    # CQ35最小サイズ 720p用
+    # プリセット2: CQ35最小サイズ 720p用
     cmd_preset2 = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --resolution 720p --preset p7 --audio-mode reencode --cq 35'
+    # プリセット3: Discord用 (10MB)
+    cmd_preset3 = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --preset p7 --audio-mode reencode --target-size-mb 10'
+    # プリセット4: Steam用 (30MB)
+    cmd_preset4 = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --preset p7 --audio-mode reencode --target-size-mb 30'
 
     registered = []
     errors = []
@@ -78,6 +82,26 @@ def register_context_menu():
         cmd_p2 = winreg.CreateKey(REG_ROOT, rf"{preset2_path}\command")
         winreg.SetValueEx(cmd_p2, "", 0, winreg.REG_SZ, cmd_preset2)
         winreg.CloseKey(cmd_p2)
+
+        # プリセット3: Discord用(10MB)
+        preset3_path = rf"{menu_key_path}\shell\Preset3"
+        key_p3 = winreg.CreateKey(REG_ROOT, preset3_path)
+        winreg.SetValueEx(key_p3, "MUIVerb", 0, winreg.REG_SZ, "Discord用(10MB)")
+        winreg.CloseKey(key_p3)
+        
+        cmd_p3 = winreg.CreateKey(REG_ROOT, rf"{preset3_path}\command")
+        winreg.SetValueEx(cmd_p3, "", 0, winreg.REG_SZ, cmd_preset3)
+        winreg.CloseKey(cmd_p3)
+
+        # プリセット4: Steam用(30MB)
+        preset4_path = rf"{menu_key_path}\shell\Preset4"
+        key_p4 = winreg.CreateKey(REG_ROOT, preset4_path)
+        winreg.SetValueEx(key_p4, "MUIVerb", 0, winreg.REG_SZ, "Steam用(30MB)")
+        winreg.CloseKey(key_p4)
+        
+        cmd_p4 = winreg.CreateKey(REG_ROOT, rf"{preset4_path}\command")
+        winreg.SetValueEx(cmd_p4, "", 0, winreg.REG_SZ, cmd_preset4)
+        winreg.CloseKey(cmd_p4)
     except Exception as e:
         errors.append(f"Menu Definition: {str(e)}")
         return [], errors
@@ -151,6 +175,14 @@ def unregister_context_menu():
         try:
             winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset2\command")
             winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset2")
+        except FileNotFoundError: pass
+        try:
+            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset3\command")
+            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset3")
+        except FileNotFoundError: pass
+        try:
+            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset4\command")
+            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset4")
         except FileNotFoundError: pass
         try:
             winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\GUI\command")
