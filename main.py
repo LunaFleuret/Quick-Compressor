@@ -181,7 +181,8 @@ class GPUConverterApp:
                  audio_mode: str = "copy",
                  no_audio: bool = False,
                  target_size_mb: float = None,
-                 codec: str = "HEVC / H.265 (NVENC)"):
+                 codec: str = "HEVC / H.265 (NVENC)",
+                 auto_close: bool = False):
         self.preset_mode = False
         self.root = root
         self.input_path = input_path
@@ -209,6 +210,7 @@ class GPUConverterApp:
         # 詳細設定変数（デフォルト値）
         self.preset_var = tk.StringVar(value=preset)
         self.audio_mode_var = tk.StringVar(value=audio_mode)
+        self.auto_close_var = tk.BooleanVar(value=auto_close)
 
         # UI用初期値保持
         self._init_fps = fps
@@ -690,6 +692,19 @@ class GPUConverterApp:
             )
             rb.pack(anchor="w")
 
+        # --- 自動終了オプション ---
+        close_option_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
+                                     highlightbackground=COLORS["border"], highlightthickness=1)
+        close_option_card.pack(fill="x", pady=(0, 10))
+
+        tk.Checkbutton(
+            close_option_card, text="変換完了後に自動で閉じる",
+            variable=self.auto_close_var,
+            font=("Segoe UI", 10), fg=COLORS["text"], bg=COLORS["bg_card"],
+            selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_card"],
+            activeforeground=COLORS["accent"],
+        ).pack(anchor="w")
+
         # 閉じるボタン
         close_btn = tk.Button(
             pad, text="閉じる",
@@ -934,7 +949,8 @@ class GPUConverterApp:
             "fps": self.fps_var.get(),
             "resolution": self.resolution_var.get(),
             "audio_mode": self.audio_mode_var.get(),
-            "no_audio": not self.audio_var.get()
+            "no_audio": not self.audio_var.get(),
+            "auto_close": self.auto_close_var.get()
         }
         
         if self.mode_var.get() == "size":
@@ -1051,6 +1067,8 @@ class GPUConverterApp:
             style = ttk.Style()
             style.configure("Custom.Horizontal.TProgressbar", background=COLORS["success"])
             self.open_btn.pack(side="left")
+            if self.auto_close_var.get():
+                self.root.destroy()
         self.root.after(0, _update)
 
     def _show_error(self, message):
@@ -1087,6 +1105,7 @@ def main():
     parser.add_argument("--auto", action="store_true", help="自動変換開始")
     parser.add_argument("--target-size-mb", type=float, default=None, help="目標ファイルサイズ(MB)")
     parser.add_argument("--codec", default="HEVC / H.265 (NVENC)", help="出力コーデック")
+    parser.add_argument("--auto-close", action="store_true", help="変換完了後に自動で閉じる")
     
     args, _ = parser.parse_known_args()
 
@@ -1122,7 +1141,8 @@ def main():
         audio_mode=args.audio_mode,
         no_audio=args.no_audio,
         target_size_mb=args.target_size_mb,
-        codec=args.codec
+        codec=args.codec,
+        auto_close=args.auto_close
     )
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()

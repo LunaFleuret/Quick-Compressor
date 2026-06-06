@@ -60,10 +60,10 @@ def register_context_menu():
     cmd_gui = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1"'
     
     presets = [
-        {"id": "Preset1", "name": "CQ35最小サイズ", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --preset p7 --audio-mode reencode --cq 35'},
-        {"id": "Preset2", "name": "CQ35最小サイズ 720p", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --resolution 720p --preset p7 --audio-mode reencode --cq 35'},
-        {"id": "Preset3", "name": "Discord用(10MB)", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --preset p7 --audio-mode reencode --target-size-mb 10 --codec "H.264 (NVENC)"'},
-        {"id": "Preset4", "name": "Steam用(30MB)", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --preset p7 --audio-mode reencode --target-size-mb 30'}
+        {"id": "Preset1", "name": "CQ35最小サイズ", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --auto-close --fps 24 --preset p7 --audio-mode reencode --cq 35'},
+        {"id": "Preset2", "name": "CQ35最小サイズ 720p", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --auto-close --fps 24 --resolution 720p --preset p7 --audio-mode reencode --cq 35'},
+        {"id": "Preset3", "name": "Discord用(10MB)", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --auto-close --fps 24 --preset p7 --audio-mode reencode --target-size-mb 10 --codec "H.264 (NVENC)"'},
+        {"id": "Preset4", "name": "Steam用(30MB)", "cmd": f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --auto-close --fps 24 --preset p7 --audio-mode reencode --target-size-mb 30'}
     ]
     
     user_presets = load_user_presets()
@@ -87,6 +87,8 @@ def register_context_menu():
             cmd += f' --codec "{cfg.get("codec")}"'
         if cfg.get("no_audio"):
             cmd += ' --no-audio'
+        if cfg.get("auto_close"):
+            cmd += ' --auto-close'
             
         presets.append({
             "id": f"Preset{idx}",
