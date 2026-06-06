@@ -7,5 +7,15 @@
         "cq": 23,
         "audio_mode": "copy",
         "no_audio": false
+    },
+    "X用": {
+        "codec": "HEVC / H.265 (NVENC)",
+        "preset": "p7",
+        "fps": "元のまま",
+        "resolution": "元のまま",
+        "audio_mode": "copy",
+        "no_audio": false,
+        "target_size_mb": 505.0,
+        "auto_close": true
     }
 }
