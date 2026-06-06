@@ -8,6 +8,7 @@ GPU Video Converter - NVIDIA NVENC
 import sys
 import os
 import json
+import argparse
 import subprocess
 import threading
 import re
@@ -169,7 +170,14 @@ def format_bitrate(bps: int) -> str:
 # メインアプリケーションクラス
 # ─────────────────────────────────────────────
 class GPUConverterApp:
-    def __init__(self, root: tk.Tk, input_path: str):
+    def __init__(self, root: tk.Tk, input_path: str,
+                 auto_start: bool = False,
+                 preset: str = "p4",
+                 fps: str = "元のまま",
+                 scale: int = 100,
+                 cq: int = 24,
+                 audio_mode: str = "copy",
+                 no_audio: bool = False):
         self.root = root
         self.input_path = input_path
         self.is_converting = False
@@ -194,11 +202,22 @@ class GPUConverterApp:
             sys.exit(1)
 
         # 詳細設定変数（デフォルト値）
-        self.preset_var = tk.StringVar(value="p4")
-        self.audio_mode_var = tk.StringVar(value="copy")
+        self.preset_var = tk.StringVar(value=preset)
+        self.audio_mode_var = tk.StringVar(value=audio_mode)
+
+        # UI用初期値保持
+        self._init_fps = fps
+        self._init_scale = scale
+        self._init_cq = cq
+        self._init_no_audio = no_audio
+        self._auto_start = auto_start
 
         # UI構築
         self._build_ui()
+
+        # 自動開始処理
+        if self._auto_start:
+            self.root.after(100, self._start_conversion)
 
         # ウィンドウをマウスポインターがある位置（画面）に配置（マルチディスプレイ対応）
         self.root.update_idletasks()
@@ -326,7 +345,7 @@ class GPUConverterApp:
                  font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
-        self.fps_var = tk.StringVar(value="30")
+        self.fps_var = tk.StringVar(value=self._init_fps)
         fps_btn_frame = tk.Frame(fps_frame, bg=COLORS["bg_dark"])
         fps_btn_frame.pack(fill="x", pady=(4, 0))
 
@@ -358,7 +377,7 @@ class GPUConverterApp:
         )
         self.scale_value_label.pack(side="right")
 
-        self.scale_var = tk.IntVar(value=100)
+        self.scale_var = tk.IntVar(value=self._init_scale)
         self.scale_slider = ttk.Scale(
             scale_frame, from_=25, to=100, orient="horizontal",
             variable=self.scale_var, length=400,
@@ -393,7 +412,7 @@ class GPUConverterApp:
 
         # CQP/CQスライダー: 値が小さいほど高画質（範囲: 15〜40）
         # UIでは左=高画質(15)、右=低画質(40) の直感的な操作にする
-        self.quality_var = tk.IntVar(value=24)
+        self.quality_var = tk.IntVar(value=self._init_cq)
         self.quality_slider = ttk.Scale(
             quality_frame, from_=15, to=40, orient="horizontal",
             variable=self.quality_var, length=400,
@@ -413,7 +432,7 @@ class GPUConverterApp:
         audio_frame = tk.Frame(settings_frame, bg=COLORS["bg_dark"])
         audio_frame.pack(fill="x", pady=(0, 4))
 
-        self.audio_var = tk.BooleanVar(value=True)
+        self.audio_var = tk.BooleanVar(value=not self._init_no_audio)
         audio_check = tk.Checkbutton(
             audio_frame, text="音声を含める",
             variable=self.audio_var,
@@ -427,6 +446,10 @@ class GPUConverterApp:
             audio_check.configure(state="disabled")
             self.audio_var.set(False)
             audio_check.configure(text="音声を含める (元の動画に音声なし)")
+
+        # 初期値に基づくラベル表示の更新
+        self._on_scale_change(self._init_scale)
+        self._on_quality_change(self._init_cq)
 
     def _build_progress_area(self, parent):
         """進捗と変換ボタンの構築"""
@@ -816,7 +839,19 @@ class GPUConverterApp:
 # メイン起動
 # ─────────────────────────────────────────────
 def main():
-    if len(sys.argv) < 2:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input", nargs="?", help="入力ファイル")
+    parser.add_argument("--preset", default="p4", help="エンコードプリセット")
+    parser.add_argument("--fps", default="元のまま", help="フレームレート")
+    parser.add_argument("--scale", type=int, default=100, help="解像度スケール(%)")
+    parser.add_argument("--cq", type=int, default=24, help="画質(CQ値)")
+    parser.add_argument("--audio-mode", choices=["copy", "reencode"], default="copy", help="音声処理モード")
+    parser.add_argument("--no-audio", action="store_true", help="音声を含めない")
+    parser.add_argument("--auto", action="store_true", help="自動変換開始")
+    
+    args, _ = parser.parse_known_args()
+
+    if not args.input:
         # 引数がない場合はファイル選択ダイアログを表示
         temp_root = tk.Tk()
         temp_root.withdraw()
@@ -831,14 +866,23 @@ def main():
         if not filepath:
             sys.exit(0)
     else:
-        filepath = sys.argv[1]
+        filepath = args.input
 
     if not os.path.isfile(filepath):
         messagebox.showerror("エラー", f"ファイルが見つかりません:\n{filepath}")
         sys.exit(1)
 
     root = tk.Tk()
-    app = GPUConverterApp(root, filepath)
+    app = GPUConverterApp(
+        root, filepath,
+        auto_start=args.auto,
+        preset=args.preset,
+        fps=args.fps,
+        scale=args.scale,
+        cq=args.cq,
+        audio_mode=args.audio_mode,
+        no_audio=args.no_audio
+    )
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
 

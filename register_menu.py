@@ -17,8 +17,10 @@ from tkinter import messagebox
 # ─────────────────────────────────────────────
 # 設定
 # ─────────────────────────────────────────────
-MENU_NAME = "GPU動画変換で圧縮"
+MENU_NAME = "GPU動画変換で圧縮..."
+MENU_NAME_PRESET = "GPU動画変換 (プリセット)"
 REGISTRY_KEY_NAME = "GPUVideoConverter"
+REGISTRY_KEY_NAME_PRESET = "GPUVideoConverterPreset"
 
 # 登録する動画拡張子
 VIDEO_EXTENSIONS = [
@@ -43,45 +45,79 @@ REG_ROOT_PATH = r"Software\Classes"
 
 def register_context_menu():
     """右クリックメニューに登録（HKCU - 管理者権限不要）"""
-    command = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1"'
+    # GUI起動用
+    cmd_gui = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1"'
+    # CQ35最小サイズ用
+    cmd_preset1 = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto --fps 24 --scale 100 --preset p7 --audio-mode reencode --cq 35'
+
     registered = []
     errors = []
 
+    # 先に ExtendedSubCommandsKey の内容 (GPUVideoConverter.Menu) を作成する
+    try:
+        menu_key_path = rf"{REG_ROOT_PATH}\{REGISTRY_KEY_NAME}.Menu"
+        
+        # プリセット1: CQ35最小サイズ
+        preset1_path = rf"{menu_key_path}\shell\Preset1"
+        key_p1 = winreg.CreateKey(REG_ROOT, preset1_path)
+        winreg.SetValueEx(key_p1, "MUIVerb", 0, winreg.REG_SZ, "CQ35最小サイズ")
+        winreg.CloseKey(key_p1)
+        
+        cmd_p1 = winreg.CreateKey(REG_ROOT, rf"{preset1_path}\command")
+        winreg.SetValueEx(cmd_p1, "", 0, winreg.REG_SZ, cmd_preset1)
+        winreg.CloseKey(cmd_p1)
+    except Exception as e:
+        errors.append(f"Menu Definition: {str(e)}")
+        return [], errors
+
     for ext in VIDEO_EXTENSIONS:
         try:
-            # 方法1: SystemFileAssociations 経由（拡張子ベース）
+            # 1. 単独GUIメニューの登録
             key_path = rf"{REG_ROOT_PATH}\SystemFileAssociations\{ext}\shell\{REGISTRY_KEY_NAME}"
-
-            # メニュー項目の登録
             key = winreg.CreateKey(REG_ROOT, key_path)
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, MENU_NAME)
+            winreg.SetValueEx(key, "MUIVerb", 0, winreg.REG_SZ, MENU_NAME)
             winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, "shell32.dll,176")
             winreg.CloseKey(key)
 
-            # コマンドの登録
             cmd_key = winreg.CreateKey(REG_ROOT, rf"{key_path}\command")
-            winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, command)
+            winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, cmd_gui)
             winreg.CloseKey(cmd_key)
+
+            # 2. カスケード(プリセット)メニューの登録
+            preset_key_path = rf"{REG_ROOT_PATH}\SystemFileAssociations\{ext}\shell\{REGISTRY_KEY_NAME_PRESET}"
+            key_preset = winreg.CreateKey(REG_ROOT, preset_key_path)
+            winreg.SetValueEx(key_preset, "MUIVerb", 0, winreg.REG_SZ, MENU_NAME_PRESET)
+            winreg.SetValueEx(key_preset, "Icon", 0, winreg.REG_SZ, "shell32.dll,176")
+            winreg.SetValueEx(key_preset, "ExtendedSubCommandsKey", 0, winreg.REG_SZ, f"{REGISTRY_KEY_NAME}.Menu")
+            winreg.CloseKey(key_preset)
 
             registered.append(ext)
         except Exception as e:
             errors.append(f"{ext}: {str(e)}")
 
     # 方法2: 全ファイル対象のフォールバック（*\shell に登録）
-    # これにより、拡張子ベースの登録が効かない場合でも動作する
     try:
+        applies_to = " OR ".join([f'System.FileName:~<"{ext}"' for ext in VIDEO_EXTENSIONS])
+        
+        # 1. 単独GUIメニュー
         star_key_path = rf"{REG_ROOT_PATH}\*\shell\{REGISTRY_KEY_NAME}"
         key = winreg.CreateKey(REG_ROOT, star_key_path)
-        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, MENU_NAME)
+        winreg.SetValueEx(key, "MUIVerb", 0, winreg.REG_SZ, MENU_NAME)
         winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, "shell32.dll,176")
-        # AppliesTo で動画ファイルのみに制限
-        applies_to = " OR ".join([f'System.FileName:~<"{ext}"' for ext in VIDEO_EXTENSIONS])
         winreg.SetValueEx(key, "AppliesTo", 0, winreg.REG_SZ, applies_to)
         winreg.CloseKey(key)
-
         cmd_key = winreg.CreateKey(REG_ROOT, rf"{star_key_path}\command")
-        winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, command)
+        winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, cmd_gui)
         winreg.CloseKey(cmd_key)
+
+        # 2. カスケードメニュー
+        star_preset_path = rf"{REG_ROOT_PATH}\*\shell\{REGISTRY_KEY_NAME_PRESET}"
+        key_preset = winreg.CreateKey(REG_ROOT, star_preset_path)
+        winreg.SetValueEx(key_preset, "MUIVerb", 0, winreg.REG_SZ, MENU_NAME_PRESET)
+        winreg.SetValueEx(key_preset, "Icon", 0, winreg.REG_SZ, "shell32.dll,176")
+        winreg.SetValueEx(key_preset, "ExtendedSubCommandsKey", 0, winreg.REG_SZ, f"{REGISTRY_KEY_NAME}.Menu")
+        winreg.SetValueEx(key_preset, "AppliesTo", 0, winreg.REG_SZ, applies_to)
+        winreg.CloseKey(key_preset)
     except Exception as e:
         errors.append(f"*: {str(e)}")
 
@@ -93,31 +129,61 @@ def unregister_context_menu():
     removed = []
     errors = []
 
-    for ext in VIDEO_EXTENSIONS:
-        key_path = rf"{REG_ROOT_PATH}\SystemFileAssociations\{ext}\shell\{REGISTRY_KEY_NAME}"
+    # メニュー定義キーの削除
+    menu_key_path = rf"{REG_ROOT_PATH}\{REGISTRY_KEY_NAME}.Menu"
+    try:
         try:
-            try:
-                winreg.DeleteKey(REG_ROOT, rf"{key_path}\command")
-            except FileNotFoundError:
-                pass
-            winreg.DeleteKey(REG_ROOT, key_path)
+            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset1\command")
+            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset1")
+        except FileNotFoundError: pass
+        try:
+            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\GUI\command")
+            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\GUI")
+        except FileNotFoundError: pass
+        try:
+            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell")
+        except FileNotFoundError: pass
+        try:
+            winreg.DeleteKey(REG_ROOT, menu_key_path)
+        except FileNotFoundError: pass
+    except Exception as e:
+        pass # 無視
+
+    for ext in VIDEO_EXTENSIONS:
+        try:
+            # 1. 単独メニューの削除
+            key_path = rf"{REG_ROOT_PATH}\SystemFileAssociations\{ext}\shell\{REGISTRY_KEY_NAME}"
+            try: winreg.DeleteKey(REG_ROOT, rf"{key_path}\command")
+            except FileNotFoundError: pass
+            try: winreg.DeleteKey(REG_ROOT, key_path)
+            except FileNotFoundError: pass
+
+            # 2. プリセットメニューの削除
+            preset_key_path = rf"{REG_ROOT_PATH}\SystemFileAssociations\{ext}\shell\{REGISTRY_KEY_NAME_PRESET}"
+            try: winreg.DeleteKey(REG_ROOT, rf"{preset_key_path}\command")
+            except FileNotFoundError: pass
+            try: winreg.DeleteKey(REG_ROOT, preset_key_path)
+            except FileNotFoundError: pass
+
             removed.append(ext)
-        except FileNotFoundError:
-            pass
         except Exception as e:
             errors.append(f"{ext}: {str(e)}")
 
     # * キーも削除
-    star_key_path = rf"{REG_ROOT_PATH}\*\shell\{REGISTRY_KEY_NAME}"
     try:
-        try:
-            winreg.DeleteKey(REG_ROOT, rf"{star_key_path}\command")
-        except FileNotFoundError:
-            pass
-        winreg.DeleteKey(REG_ROOT, star_key_path)
+        star_key_path = rf"{REG_ROOT_PATH}\*\shell\{REGISTRY_KEY_NAME}"
+        try: winreg.DeleteKey(REG_ROOT, rf"{star_key_path}\command")
+        except FileNotFoundError: pass
+        try: winreg.DeleteKey(REG_ROOT, star_key_path)
+        except FileNotFoundError: pass
+
+        star_preset_path = rf"{REG_ROOT_PATH}\*\shell\{REGISTRY_KEY_NAME_PRESET}"
+        try: winreg.DeleteKey(REG_ROOT, rf"{star_preset_path}\command")
+        except FileNotFoundError: pass
+        try: winreg.DeleteKey(REG_ROOT, star_preset_path)
+        except FileNotFoundError: pass
+
         removed.append("*")
-    except FileNotFoundError:
-        pass
     except Exception as e:
         errors.append(f"*: {str(e)}")
 
