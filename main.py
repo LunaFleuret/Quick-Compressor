@@ -21,22 +21,22 @@ from pathlib import Path
 FFMPEG_PATH = "ffmpeg"
 FFPROBE_PATH = "ffprobe"
 
-# カラーパレット（ダークモード）
+# カラーパレット（ライト・シンプルモード）
 COLORS = {
-    "bg_dark":      "#1a1a2e",
-    "bg_card":      "#16213e",
-    "bg_input":     "#0f3460",
-    "accent":       "#0096ff",
-    "accent_hover": "#38b6ff",
-    "accent_press": "#006bbf",
-    "text":         "#e8e8e8",
-    "text_dim":     "#8b8fa3",
+    "bg_dark":      "#f0f2f5",
+    "bg_card":      "#ffffff",
+    "bg_input":     "#ffffff",
+    "accent":       "#005fb8",
+    "accent_hover": "#0078d4",
+    "accent_press": "#004a90",
+    "text":         "#212529",
+    "text_dim":     "#6c757d",
     "text_bright":  "#ffffff",
-    "success":      "#00d26a",
+    "success":      "#198754",
     "warning":      "#ffc107",
-    "error":        "#ff4757",
-    "border":       "#2a2a4a",
-    "slider_track": "#2a2a4a",
+    "error":        "#dc3545",
+    "border":       "#dee2e6",
+    "slider_track": "#e9ecef",
 }
 
 # コーデック定義
@@ -269,7 +269,7 @@ class GPUConverterApp:
             filename = filename[:52] + "..."
         tk.Label(
             card, text=f"📁 {filename}",
-            font=("Segoe UI", 11, "bold"), fg=COLORS["text_bright"], bg=COLORS["bg_card"],
+            font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"],
             anchor="w"
         ).pack(fill="x")
 
@@ -358,12 +358,9 @@ class GPUConverterApp:
         self.scale_value_label.pack(side="right")
 
         self.scale_var = tk.IntVar(value=100)
-        self.scale_slider = tk.Scale(
+        self.scale_slider = ttk.Scale(
             scale_frame, from_=25, to=100, orient="horizontal",
-            variable=self.scale_var, showvalue=False,
-            bg=COLORS["bg_dark"], fg=COLORS["text"],
-            troughcolor="#ffffff", activebackground=COLORS["accent"],
-            highlightthickness=0, sliderrelief="flat", length=400,
+            variable=self.scale_var, length=400,
             command=self._on_scale_change
         )
         self.scale_slider.pack(fill="x", pady=(4, 0))
@@ -396,12 +393,9 @@ class GPUConverterApp:
         # CQP/CQスライダー: 値が小さいほど高画質（範囲: 15〜40）
         # UIでは左=高画質(15)、右=低画質(40) の直感的な操作にする
         self.quality_var = tk.IntVar(value=24)
-        self.quality_slider = tk.Scale(
+        self.quality_slider = ttk.Scale(
             quality_frame, from_=15, to=40, orient="horizontal",
-            variable=self.quality_var, showvalue=False,
-            bg=COLORS["bg_dark"], fg=COLORS["text"],
-            troughcolor="#ffffff", activebackground=COLORS["accent"],
-            highlightthickness=0, sliderrelief="flat", length=400,
+            variable=self.quality_var, length=400,
             command=self._on_quality_change
         )
         self.quality_slider.pack(fill="x", pady=(4, 0))
@@ -474,6 +468,7 @@ class GPUConverterApp:
             font=("Segoe UI", 13, "bold"), fg=COLORS["text_bright"],
             bg=COLORS["accent"], activebackground=COLORS["accent_hover"],
             activeforeground=COLORS["text_bright"],
+            disabledforeground=COLORS["text_bright"],
             relief="flat", padx=32, pady=10, cursor="hand2",
             command=self._start_conversion,
         )
@@ -587,7 +582,7 @@ class GPUConverterApp:
     # イベントハンドラ
     # ─────────────────────────────────────────
     def _on_scale_change(self, value):
-        pct = int(value)
+        pct = int(float(value))
         self.scale_value_label.configure(text=f"{pct}%")
         new_w = int(self.video_info["width"] * pct / 100)
         new_h = int(self.video_info["height"] * pct / 100)
@@ -599,7 +594,7 @@ class GPUConverterApp:
         )
 
     def _on_quality_change(self, value):
-        cq = int(value)
+        cq = int(float(value))
         if cq <= 20:
             desc = "最高画質"
             color = COLORS["accent"]
