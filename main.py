@@ -180,7 +180,9 @@ class GPUConverterApp:
                  cq: int = 24,
                  audio_mode: str = "copy",
                  no_audio: bool = False,
-                 target_size_mb: float = None):
+                 target_size_mb: float = None,
+                 codec: str = "HEVC / H.265 (NVENC)"):
+        self.preset_mode = False
         self.root = root
         self.input_path = input_path
         self.is_converting = False
@@ -215,6 +217,7 @@ class GPUConverterApp:
         self._init_no_audio = no_audio
         self._auto_start = auto_start
         self._target_size_mb = target_size_mb
+        self._init_codec = codec
 
         # UI用ttkスタイルの設定（完全ダークモード専用）
         style = ttk.Style()
@@ -274,9 +277,18 @@ class GPUConverterApp:
         main_frame = tk.Frame(self.root, bg=COLORS["bg_dark"], padx=24, pady=20)
         main_frame.pack(fill="both", expand=True)
 
+        # --- プリセット作成モード バナー (初期は非表示) ---
+        self.preset_banner = tk.Frame(main_frame, bg=COLORS["success"], pady=8)
+        self.preset_banner_label = tk.Label(
+            self.preset_banner, text="🎁 プリセット作成モード：現在の設定をプリセットとして保存できます",
+            font=("Segoe UI", 10, "bold"), fg=COLORS["text_bright"], bg=COLORS["success"]
+        )
+        self.preset_banner_label.pack()
+
         # --- タイトル ---
-        title_frame = tk.Frame(main_frame, bg=COLORS["bg_dark"])
-        title_frame.pack(fill="x", pady=(0, 16))
+        self.title_frame = tk.Frame(main_frame, bg=COLORS["bg_dark"])
+        self.title_frame.pack(fill="x", pady=(0, 16))
+        title_frame = self.title_frame
 
         tk.Label(
             title_frame, text="⚡ GPU動画コンバーター",
@@ -294,6 +306,18 @@ class GPUConverterApp:
             command=self._open_settings,
         )
         settings_btn.pack(side="right", pady=(8, 0))
+
+        # プリセット作成ボタン
+        preset_btn = tk.Button(
+            title_frame, text="🎁 プリセット作成",
+            font=("Segoe UI", 9), fg=COLORS["success"],
+            bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
+            activeforeground=COLORS["success"],
+            relief="flat", cursor="hand2", padx=8, pady=2,
+            highlightbackground=COLORS["border"], highlightthickness=1,
+            command=self._toggle_preset_mode,
+        )
+        preset_btn.pack(side="right", pady=(8, 0), padx=(0, 8))
 
         tk.Label(
             title_frame, text="NVIDIA NVENC",
@@ -369,7 +393,7 @@ class GPUConverterApp:
                  font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
-        self.codec_var = tk.StringVar(value="HEVC / H.265 (NVENC)")
+        self.codec_var = tk.StringVar(value=self._init_codec)
         codec_combo = ttk.Combobox(codec_frame, textvariable=self.codec_var,
                                    values=list(CODECS.keys()), state="readonly",
                                    font=("Segoe UI", 10), width=22)
@@ -430,11 +454,38 @@ class GPUConverterApp:
         )
         self.resolution_preview_label.pack(anchor="w")
 
-        # --- 画質 (CQP) ---
+        # --- 画質 (CQP) / 容量指定 ---
         quality_frame = tk.Frame(settings_frame, bg=COLORS["bg_dark"])
         quality_frame.pack(fill="x", pady=(0, 12))
 
-        quality_label_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
+        # モード選択ラジオボタン
+        mode_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
+        mode_frame.pack(fill="x", pady=(0, 8))
+
+        tk.Label(mode_frame, text="設定モード",
+                 font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 ).pack(side="left", padx=(0, 12))
+
+        self.mode_var = tk.StringVar(value="cq" if not self._target_size_mb else "size")
+        
+        tk.Radiobutton(
+            mode_frame, text="品質優先 (CQ)", variable=self.mode_var, value="cq",
+            font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
+            activeforeground=COLORS["accent"], command=self._on_mode_change
+        ).pack(side="left", padx=(0, 8))
+
+        tk.Radiobutton(
+            mode_frame, text="容量優先 (MB指定)", variable=self.mode_var, value="size",
+            font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
+            activeforeground=COLORS["accent"], command=self._on_mode_change
+        ).pack(side="left")
+
+        # --- 品質優先(CQ)用UI ---
+        self.cq_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
+        
+        quality_label_frame = tk.Frame(self.cq_frame, bg=COLORS["bg_dark"])
         quality_label_frame.pack(fill="x")
 
         tk.Label(quality_label_frame, text="画質 (品質優先 ← → ファイルサイズ優先)",
@@ -447,23 +498,47 @@ class GPUConverterApp:
         )
         self.quality_value_label.pack(side="right")
 
-        # CQP/CQスライダー: 値が小さいほど高画質（範囲: 15〜40）
-        # UIでは左=高画質(15)、右=低画質(40) の直感的な操作にする
         self.quality_var = tk.IntVar(value=self._init_cq)
         self.quality_slider = ttk.Scale(
-            quality_frame, from_=15, to=40, orient="horizontal",
+            self.cq_frame, from_=15, to=40, orient="horizontal",
             variable=self.quality_var, length=400,
             command=self._on_quality_change
         )
         self.quality_slider.pack(fill="x", pady=(4, 0))
 
-        # 画質プレビュー
         self.quality_desc_label = tk.Label(
-            quality_frame,
+            self.cq_frame,
             text="CQ値が低い ← 高画質・大ファイル ｜ 低画質・小ファイル → CQ値が高い",
             font=("Segoe UI", 8), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
         )
         self.quality_desc_label.pack(anchor="w")
+
+        # --- 容量優先(MB)用UI ---
+        self.size_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
+
+        size_label_frame = tk.Frame(self.size_frame, bg=COLORS["bg_dark"])
+        size_label_frame.pack(fill="x")
+        
+        tk.Label(size_label_frame, text="目標ファイルサイズ (MB)",
+                 font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 ).pack(side="left")
+
+        self.target_size_var = tk.StringVar(value=str(self._target_size_mb) if self._target_size_mb else "10")
+        self.size_combo = ttk.Combobox(
+            self.size_frame, textvariable=self.target_size_var,
+            values=["8", "10", "25", "30", "50", "100"],
+            font=("Segoe UI", 10), width=15
+        )
+        self.size_combo.pack(anchor="w", pady=(4, 0))
+
+        tk.Label(
+            self.size_frame,
+            text="指定した容量に収まるようにビットレートを自動調整します",
+            font=("Segoe UI", 8), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
+        ).pack(anchor="w", pady=(4, 0))
+
+        # 初期表示の切り替え
+        self._on_mode_change()
 
         # --- 音声 ---
         audio_frame = tk.Frame(settings_frame, bg=COLORS["bg_dark"])
@@ -659,6 +734,14 @@ class GPUConverterApp:
             text=f"{orig_w}×{orig_h} → {new_w}×{new_h}"
         )
 
+    def _on_mode_change(self):
+        if self.mode_var.get() == "cq":
+            self.size_frame.pack_forget()
+            self.cq_frame.pack(fill="x")
+        else:
+            self.cq_frame.pack_forget()
+            self.size_frame.pack(fill="x")
+
     def _on_quality_change(self, value):
         cq = int(float(value))
         if cq <= 20:
@@ -726,13 +809,20 @@ class GPUConverterApp:
         is_target_size_mode = False
         video_kbps = 0
         
-        if getattr(self, "_target_size_mb", None) is not None and self._target_size_mb > 0:
+        target_size_mb = None
+        if self.mode_var.get() == "size":
+            try:
+                target_size_mb = float(self.target_size_var.get())
+            except ValueError:
+                target_size_mb = None
+
+        if target_size_mb is not None and target_size_mb > 0:
             duration = self.video_info.get("duration", 0)
             if duration > 0:
                 is_target_size_mode = True
                 audio_kbps = 64 if (self.audio_var.get() and self.video_info.get("has_audio")) else 0
                 # 容量超過を防ぐため、目標サイズの95%をターゲットにする（メタデータなどのマージン）
-                target_total_kbps = (self._target_size_mb * 0.95 * 8192) / duration
+                target_total_kbps = (target_size_mb * 0.95 * 8192) / duration
                 video_kbps = max(100, int(target_total_kbps - audio_kbps))
                 
                 cmd.extend([
@@ -806,7 +896,75 @@ class GPUConverterApp:
     # ─────────────────────────────────────────
     # 変換処理
     # ─────────────────────────────────────────
+    def _toggle_preset_mode(self):
+        self.preset_mode = not self.preset_mode
+        if self.preset_mode:
+            self.preset_banner.pack(fill="x", pady=(0, 16), before=self.title_frame)
+            self.convert_btn.configure(
+                text="💾 現在の設定をプリセットとして保存",
+                bg=COLORS["success"],
+                activebackground="#157347",
+            )
+        else:
+            self.preset_banner.pack_forget()
+            self.convert_btn.configure(
+                text="⚡ 圧縮開始",
+                bg=COLORS["accent"],
+                activebackground=COLORS["accent_hover"],
+            )
+
+    def _save_preset(self):
+        from tkinter import simpledialog
+        name = simpledialog.askstring("プリセット名", "プリセットの名前を入力してください\n（例: Discord用、Steam用）")
+        if not name:
+            return
+        
+        presets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "user_presets.json")
+        user_presets = {}
+        if os.path.exists(presets_path):
+            try:
+                with open(presets_path, "r", encoding="utf-8") as f:
+                    user_presets = json.load(f)
+            except:
+                pass
+        
+        user_presets[name] = {
+            "codec": self.codec_var.get(),
+            "preset": self.preset_var.get(),
+            "fps": self.fps_var.get(),
+            "resolution": self.resolution_var.get(),
+            "audio_mode": self.audio_mode_var.get(),
+            "no_audio": not self.audio_var.get()
+        }
+        
+        if self.mode_var.get() == "size":
+            try:
+                user_presets[name]["target_size_mb"] = float(self.target_size_var.get())
+            except ValueError:
+                user_presets[name]["target_size_mb"] = 10.0
+        else:
+            user_presets[name]["cq"] = self.quality_var.get()
+        
+        try:
+            with open(presets_path, "w", encoding="utf-8") as f:
+                json.dump(user_presets, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            messagebox.showerror("エラー", f"プリセットの保存に失敗しました:\n{e}")
+            return
+            
+        try:
+            script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "register_menu.py")
+            subprocess.run([sys.executable, script_path, "--register"], check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            messagebox.showinfo("完了", f"プリセット「{name}」を保存し、右クリックメニューを更新しました！")
+            self._toggle_preset_mode()
+        except Exception as e:
+            messagebox.showerror("エラー", f"レジストリの更新に失敗しました:\n{e}")
+
     def _start_conversion(self):
+        if self.preset_mode:
+            self._save_preset()
+            return
+
         if self.is_converting:
             return
         self.is_converting = True
@@ -928,6 +1086,7 @@ def main():
     parser.add_argument("--no-audio", action="store_true", help="音声を含めない")
     parser.add_argument("--auto", action="store_true", help="自動変換開始")
     parser.add_argument("--target-size-mb", type=float, default=None, help="目標ファイルサイズ(MB)")
+    parser.add_argument("--codec", default="HEVC / H.265 (NVENC)", help="出力コーデック")
     
     args, _ = parser.parse_known_args()
 
@@ -962,7 +1121,8 @@ def main():
         cq=args.cq,
         audio_mode=args.audio_mode,
         no_audio=args.no_audio,
-        target_size_mb=args.target_size_mb
+        target_size_mb=args.target_size_mb,
+        codec=args.codec
     )
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()

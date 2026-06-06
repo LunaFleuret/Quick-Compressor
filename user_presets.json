@@ -1,0 +1,11 @@
+{
+    "→30FPS": {
+        "codec": "HEVC / H.265 (NVENC)",
+        "preset": "p4",
+        "fps": "30",
+        "resolution": "1080p",
+        "cq": 23,
+        "audio_mode": "copy",
+        "no_audio": false
+    }
+}
