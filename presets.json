@@ -1,0 +1,72 @@
+{
+    "CQ35最小サイズ": {
+        "audio_mode": "reencode",
+        "auto_close": true,
+        "codec": "HEVC / H.265 (NVENC)",
+        "cq": 35,
+        "fps": "24",
+        "no_audio": false,
+        "preset": "p7",
+        "resolution": "元のまま"
+    },
+    "CQ35最小サイズ 720p": {
+        "audio_mode": "reencode",
+        "auto_close": true,
+        "codec": "HEVC / H.265 (NVENC)",
+        "cq": 35,
+        "fps": "24",
+        "no_audio": false,
+        "preset": "p7",
+        "resolution": "720p"
+    },
+    "Change to 30FPS": {
+        "audio_mode": "copy",
+        "auto_close": false,
+        "codec": "HEVC / H.265 (NVENC)",
+        "cq": 23,
+        "fps": "30",
+        "no_audio": false,
+        "preset": "p4",
+        "resolution": "1080p"
+    },
+    "Discord Free (10MB)": {
+        "audio_mode": "reencode",
+        "auto_close": true,
+        "codec": "H.264 (NVENC)",
+        "fps": "24",
+        "no_audio": false,
+        "preset": "p7",
+        "resolution": "元のまま",
+        "target_size_mb": 10.0
+    },
+    "Discord Nitro Basic (50MB)": {
+        "audio_mode": "reencode",
+        "auto_close": true,
+        "codec": "H.264 (NVENC)",
+        "fps": "30",
+        "no_audio": false,
+        "preset": "p7",
+        "resolution": "元のまま",
+        "target_size_mb": 45.0
+    },
+    "Steam Chat (30MB)": {
+        "audio_mode": "reencode",
+        "auto_close": true,
+        "codec": "HEVC / H.265 (NVENC)",
+        "fps": "24",
+        "no_audio": false,
+        "preset": "p7",
+        "resolution": "元のまま",
+        "target_size_mb": 30.0
+    },
+    "X Post (512MB)": {
+        "audio_mode": "copy",
+        "auto_close": true,
+        "codec": "HEVC / H.265 (NVENC)",
+        "fps": "元のまま",
+        "no_audio": false,
+        "preset": "p7",
+        "resolution": "元のまま",
+        "target_size_mb": 505.0
+    }
+}

@@ -310,7 +310,7 @@ class GPUConverterApp:
         settings_btn.pack(side="right", pady=(8, 0))
 
         # プリセット作成ボタン
-        preset_btn = tk.Button(
+        self.preset_btn = tk.Button(
             title_frame, text="🎁 プリセット作成",
             font=("Segoe UI", 9), fg=COLORS["success"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
@@ -319,7 +319,7 @@ class GPUConverterApp:
             highlightbackground=COLORS["border"], highlightthickness=1,
             command=self._toggle_preset_mode,
         )
-        preset_btn.pack(side="right", pady=(8, 0), padx=(0, 8))
+        self.preset_btn.pack(side="right", pady=(8, 0), padx=(0, 8))
 
         preset_manage_btn = tk.Button(
             title_frame, text="📋 プリセット管理",
@@ -931,12 +931,22 @@ class GPUConverterApp:
                 bg=COLORS["success"],
                 activebackground="#157347",
             )
+            self.preset_btn.configure(
+                text="✖ キャンセル",
+                fg=COLORS["error"],
+                activeforeground=COLORS["error"]
+            )
         else:
             self.preset_banner.pack_forget()
             self.convert_btn.configure(
                 text="⚡ 圧縮開始",
                 bg=COLORS["accent"],
                 activebackground=COLORS["accent_hover"],
+            )
+            self.preset_btn.configure(
+                text="🎁 プリセット作成",
+                fg=COLORS["success"],
+                activeforeground=COLORS["success"]
             )
 
     # ─────────────────────────────────────────
