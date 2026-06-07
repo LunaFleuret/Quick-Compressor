@@ -1,42 +1,52 @@
 {
-    "Discord Nitro Basic (50MB)": {
-        "codec": "H.264 (NVIDIA NVENC)",
-        "preset": "p7",
-        "fps": "30",
-        "resolution": "元のまま",
-        "audio_mode": "reencode",
-        "no_audio": false,
-        "target_size_mb": 45.0,
-        "auto_close": true
-    },
-    "Discord用(10MB)": {
-        "codec": "H.264 (NVIDIA NVENC)",
-        "preset": "p7",
-        "fps": "24",
-        "resolution": "元のまま",
-        "audio_mode": "reencode",
-        "no_audio": false,
-        "target_size_mb": 10.0,
-        "auto_close": true
-    },
-    "Steam用(30MB)": {
-        "codec": "HEVC / H.265 (NVIDIA NVENC)",
-        "preset": "p7",
-        "fps": "24",
-        "resolution": "元のまま",
-        "audio_mode": "reencode",
-        "no_audio": false,
-        "target_size_mb": 30.0,
-        "auto_close": true
-    },
-    "X用": {
-        "codec": "HEVC / H.265 (NVIDIA NVENC)",
-        "preset": "p7",
-        "fps": "元のまま",
-        "resolution": "元のまま",
+    "Change to 30FPS": {
         "audio_mode": "copy",
+        "auto_close": false,
+        "codec": "HEVC / H.265 (NVIDIA NVENC)",
+        "cq": 23,
+        "fps": "30",
         "no_audio": false,
-        "target_size_mb": 505.0,
-        "auto_close": true
+        "preset": "p4",
+        "resolution": "1080p"
+    },
+    "Discord Free (10MB)": {
+        "audio_mode": "reencode",
+        "auto_close": true,
+        "codec": "H.264 (NVIDIA NVENC)",
+        "fps": "24",
+        "no_audio": false,
+        "preset": "p7",
+        "resolution": "元のまま",
+        "target_size_mb": 10.0
+    },
+    "Discord Nitro Basic (50MB)": {
+        "audio_mode": "reencode",
+        "auto_close": true,
+        "codec": "H.264 (NVIDIA NVENC)",
+        "fps": "30",
+        "no_audio": false,
+        "preset": "p7",
+        "resolution": "元のまま",
+        "target_size_mb": 45.0
+    },
+    "Steam Chat (30MB)": {
+        "audio_mode": "reencode",
+        "auto_close": true,
+        "codec": "HEVC / H.265 (NVIDIA NVENC)",
+        "fps": "24",
+        "no_audio": false,
+        "preset": "p7",
+        "resolution": "元のまま",
+        "target_size_mb": 30.0
+    },
+    "X Post (512MB)": {
+        "audio_mode": "copy",
+        "auto_close": true,
+        "codec": "HEVC / H.265 (NVIDIA NVENC)",
+        "fps": "元のまま",
+        "no_audio": false,
+        "preset": "p7",
+        "resolution": "元のまま",
+        "target_size_mb": 505.0
     }
 }
