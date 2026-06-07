@@ -1602,48 +1602,45 @@ class QuickCompressorApp:
             self.preset_apply_combo.selection_clear()
             self.root.focus_set()
 
-    def _get_presets_data(self):
-        presets_path = os.path.join(register_menu.DATA_DIR, "presets.json")
+    def _get_default_presets(self):
         default_path = os.path.join(register_menu.APP_DIR, "default_presets.json")
-        
-        if not os.path.exists(presets_path) and os.path.exists(default_path):
+        default_presets = {}
+        if os.path.exists(default_path):
             try:
                 with open(default_path, "r", encoding="utf-8") as f:
                     content = f.read()
                 
-                # 初回生成時のみGPUを判定し、AMDならプリセットのコーデック指定を書き換える
                 default_codec = detect_gpu_and_default_codec()
                 if "AMD" in default_codec:
                     content = content.replace("NVIDIA NVENC", "AMD AMF")
                     
-                with open(presets_path, "w", encoding="utf-8") as f:
-                    f.write(content)
-                    
-                # コピーした時点で、右クリックメニューのレジストリも最新プリセットで自動更新する
-                register_menu.register_context_menu()
+                default_presets = json.loads(content)
             except Exception:
                 pass
+        return default_presets
 
-        presets = {}
+    def _get_user_presets(self):
+        presets_path = os.path.join(register_menu.DATA_DIR, "presets.json")
+        user_presets = {}
         if os.path.exists(presets_path):
             try:
                 with open(presets_path, "r", encoding="utf-8") as f:
-                    presets = json.load(f)
+                    user_presets = json.load(f)
             except Exception:
                 pass
-        return presets_path, presets
+        return user_presets
+
+    def _get_presets_data(self):
+        presets_path = os.path.join(register_menu.DATA_DIR, "presets.json")
+        all_presets = {}
+        all_presets.update(self._get_default_presets())
+        all_presets.update(self._get_user_presets())
+        return presets_path, all_presets
 
     def _get_filtered_presets_data(self):
         path, presets = self._get_presets_data()
         if hasattr(self, 'hide_no_audio_presets_var') and self.hide_no_audio_presets_var.get():
-            default_path = os.path.join(register_menu.APP_DIR, "default_presets.json")
-            default_presets = {}
-            if os.path.exists(default_path):
-                try:
-                    with open(default_path, "r", encoding="utf-8") as f:
-                        default_presets = json.load(f)
-                except Exception:
-                    pass
+            default_presets = self._get_default_presets()
             filtered = {}
             for name, p in presets.items():
                 if name in default_presets and p.get("no_audio"):
@@ -1685,14 +1682,20 @@ class QuickCompressorApp:
         if not new_name or new_name == old_name:
             return
             
+        default_presets = self._get_default_presets()
+        if old_name in default_presets:
+            messagebox.showwarning("警告", "デフォルトのプリセットは名前を変更できません。")
+            return
+            
         path, presets = self._get_presets_data()
         if new_name in presets:
             messagebox.showwarning("警告", "その名前のプリセットは既に存在します。")
             return
             
-        if old_name in presets:
-            presets[new_name] = presets.pop(old_name)
-            if self._save_presets_data(path, presets):
+        user_presets = self._get_user_presets()
+        if old_name in user_presets:
+            user_presets[new_name] = user_presets.pop(old_name)
+            if self._save_presets_data(path, user_presets):
                 self._refresh_preset_list()
                 self._update_apply_preset_list()
                 self.preset_name_var.set("")
@@ -1704,11 +1707,18 @@ class QuickCompressorApp:
             return
             
         name = self.preset_listbox.get(selection[0])
+        
+        default_presets = self._get_default_presets()
+        if name in default_presets:
+            messagebox.showwarning("警告", "デフォルトのプリセットは削除できません。")
+            return
+            
         if messagebox.askyesno("確認", f"プリセット「{name}」を削除しますか？"):
             path, presets = self._get_presets_data()
-            if name in presets:
-                del presets[name]
-                if self._save_presets_data(path, presets):
+            user_presets = self._get_user_presets()
+            if name in user_presets:
+                del user_presets[name]
+                if self._save_presets_data(path, user_presets):
                     self._refresh_preset_list()
                     self._update_apply_preset_list()
                     self.preset_name_var.set("")
@@ -1720,14 +1730,13 @@ class QuickCompressorApp:
         if not name:
             return
         
+        default_presets = self._get_default_presets()
+        if name in default_presets:
+            messagebox.showwarning("警告", "デフォルトのプリセットと同名で保存することはできません。別の名前を指定してください。")
+            return
+            
         presets_path = os.path.join(register_menu.DATA_DIR, "presets.json")
-        user_presets = {}
-        if os.path.exists(presets_path):
-            try:
-                with open(presets_path, "r", encoding="utf-8") as f:
-                    user_presets = json.load(f)
-            except:
-                pass
+        user_presets = self._get_user_presets()
         
         user_presets[name] = {
             "codec": self.codec_var.get(),

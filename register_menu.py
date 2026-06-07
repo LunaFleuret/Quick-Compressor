@@ -71,7 +71,11 @@ def load_all_presets():
     presets_path = os.path.join(DATA_DIR, "presets.json")
     default_path = os.path.join(APP_DIR, "default_presets.json")
     
-    if not os.path.exists(presets_path) and os.path.exists(default_path):
+    all_presets = {}
+    default_presets = {}
+    
+    # 1. デフォルトプリセットを読み込む
+    if os.path.exists(default_path):
         try:
             with open(default_path, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -86,16 +90,18 @@ def load_all_presets():
             if "AMD" in default_codec:
                 content = content.replace("NVIDIA NVENC", "AMD AMF")
                 
-            with open(presets_path, "w", encoding="utf-8") as f:
-                f.write(content)
+            default_presets = json.loads(content)
+            all_presets.update(default_presets)
         except Exception:
             pass
             
+    # 2. ユーザープリセットを読み込む
     presets = {}
     if os.path.exists(presets_path):
         try:
             with open(presets_path, "r", encoding="utf-8") as f:
-                presets.update(json.load(f))
+                presets = json.load(f)
+                all_presets.update(presets)
         except Exception:
             pass
 
@@ -109,23 +115,15 @@ def load_all_presets():
         except Exception:
             pass
 
-    default_presets = {}
-    if hide_no_audio and os.path.exists(default_path):
-        try:
-            with open(default_path, "r", encoding="utf-8") as f:
-                default_presets = json.load(f)
-        except Exception:
-            pass
-
     if hide_no_audio:
         filtered_presets = {}
-        for name, p in presets.items():
+        for name, p in all_presets.items():
             if name in default_presets and p.get("no_audio"):
                 continue
             filtered_presets[name] = p
         return filtered_presets
 
-    return presets
+    return all_presets
 
 def register_context_menu():
     """右クリックメニューに登録（HKCU - 管理者権限不要）"""

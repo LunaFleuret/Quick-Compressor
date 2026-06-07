@@ -1,5 +1,5 @@
 {
-    "Change to 30FPS": {
+    "Change to 30FPS (High)": {
         "audio_mode": "copy",
         "auto_close": false,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
@@ -7,7 +7,17 @@
         "fps": "30",
         "no_audio": false,
         "preset": "p4",
-        "resolution": "1080p"
+        "resolution": "元のまま"
+    },
+    "Change to 30FPS (Low)": {
+        "audio_mode": "copy",
+        "auto_close": false,
+        "codec": "HEVC / H.265 (NVIDIA NVENC)",
+        "cq": 30,
+        "fps": "30",
+        "no_audio": false,
+        "preset": "p4",
+        "resolution": "元のまま"
     },
     "Discord Free (10MB)": {
         "audio_mode": "reencode",
@@ -16,7 +26,7 @@
         "fps": "24",
         "no_audio": false,
         "preset": "p7",
-        "resolution": "元のまま",
+        "resolution": "720p",
         "target_size_mb": 10.0
     },
     "Discord Free (10MB) (No Audio)": {
@@ -26,7 +36,7 @@
         "fps": "24",
         "no_audio": true,
         "preset": "p7",
-        "resolution": "元のまま",
+        "resolution": "720p",
         "target_size_mb": 10.0
     },
     "Discord Nitro Basic (50MB)": {
@@ -70,13 +80,23 @@
         "target_size_mb": 30.0
     },
     "X Post (512MB)": {
-        "audio_mode": "copy",
+        "audio_mode": "reencode",
         "auto_close": true,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
         "fps": "元のまま",
         "no_audio": false,
         "preset": "p7",
         "resolution": "元のまま",
-        "target_size_mb": 505.0
+        "target_size_mb": 512.0
+    },
+    "Half Size (50%)": {
+        "audio_mode": "reencode",
+        "auto_close": false,
+        "codec": "HEVC / H.265 (NVIDIA NVENC)",
+        "fps": "元のまま",
+        "no_audio": false,
+        "preset": "p7",
+        "resolution": "元のまま",
+        "target_percent": 50.0
     }
 }
