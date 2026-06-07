@@ -782,7 +782,7 @@ class QuickCompressorApp:
         self.percent_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
 
         percent_input_frame = tk.Frame(self.percent_frame, bg=COLORS["bg_dark"])
-        percent_input_frame.pack(fill="x")
+        percent_input_frame.pack(anchor="center", pady=(4, 0))
         
         self.target_percent_var = tk.StringVar(value="50")
         self.percent_combo = ttk.Combobox(
@@ -790,17 +790,17 @@ class QuickCompressorApp:
             values=["25", "30", "50", "75", "80"],
             font=("Segoe UI", 11), width=8
         )
-        self.percent_combo.pack(side="left", pady=(4, 0))
+        self.percent_combo.pack(side="left")
         
         tk.Label(percent_input_frame, text=" % のサイズまで圧縮",
                  font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
-                 ).pack(side="left", pady=(4, 0), padx=(8, 0))
+                 ).pack(side="left", padx=(8, 0))
 
         tk.Label(
             self.percent_frame,
             text="元のファイルサイズから計算し、指定した割合に収まるように自動調整します",
             font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
-        ).pack(anchor="w", pady=(4, 0))
+        ).pack(anchor="center", pady=(4, 0))
 
         # 初期表示の切り替え
         self._on_mode_change()
