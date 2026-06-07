@@ -347,7 +347,7 @@ class QuickCompressorApp:
     def _enable_window_drag(self):
         def start_drag(event):
             ignore_classes = ("Button", "TButton", "TCombobox", "TScale", "Radiobutton", "TRadiobutton", "Checkbutton", "TCheckbutton")
-            if event.widget.winfo_class() in ignore_classes:
+            if event.widget.winfo_class() in ignore_classes or getattr(event.widget, '_is_file_card', False):
                 self.root._drag_start_x = None
                 return
             self.root._drag_start_x = event.x_root - self.root.winfo_x()
@@ -366,6 +366,8 @@ class QuickCompressorApp:
         if HAS_DND:
             self.root.drop_target_register(DND_FILES)
             self.root.dnd_bind('<<Drop>>', self._on_drop)
+            self.root.dnd_bind('<<DropEnter>>', self._on_drop_enter)
+            self.root.dnd_bind('<<DropPosition>>', self._on_drop_enter)
 
         # アップデートチェック（非同期）
         threading.Thread(target=self._check_for_updates, daemon=True).start()
@@ -480,7 +482,7 @@ class QuickCompressorApp:
         for widget in self.card_frame.winfo_children():
             widget.destroy()
         btn = tk.Button(
-            self.card_frame, text="📁 動画ファイルを選択...",
+            self.card_frame, text="動画ファイルを選択 または ドロップ",
             font=("Segoe UI", 11, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
             activebackground=COLORS["bg_input"], activeforeground=COLORS["accent_hover"],
             relief="flat", cursor="hand2", pady=8,
@@ -491,6 +493,13 @@ class QuickCompressorApp:
     def _build_populated_file_info(self):
         for widget in self.card_frame.winfo_children():
             widget.destroy()
+
+        def bind_click(widget):
+            widget.bind("<ButtonRelease-1>", lambda e: self._select_file())
+            widget.configure(cursor="hand2")
+            widget._is_file_card = True
+            for child in widget.winfo_children():
+                bind_click(child)
 
         # ファイル名
         filename = Path(self.input_path).name
@@ -506,12 +515,9 @@ class QuickCompressorApp:
             anchor="w"
         ).pack(side="left")
         
-        tk.Button(
-            header_frame, text="📁 ファイルを選択",
-            font=("Segoe UI", 9), fg=COLORS["accent"], bg=COLORS["bg_card"],
-            activebackground=COLORS["bg_input"], activeforeground=COLORS["accent_hover"],
-            relief="flat", cursor="hand2", padx=8, pady=0,
-            command=self._select_file
+        tk.Label(
+            header_frame, text="※クリック または ドロップで変更",
+            font=("Segoe UI", 9, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
         ).pack(side="right")
 
         # 詳細情報行
@@ -535,6 +541,9 @@ class QuickCompressorApp:
             tk.Label(detail_frame, text=detail, fg=COLORS["text_dim"],
                      bg=COLORS["bg_card"], font=("Segoe UI", 9)).pack(side="left")
 
+        # クリックイベントを全体に適用
+        bind_click(self.card_frame)
+
     def _toggle_topmost(self):
         self.is_topmost = not self.is_topmost
         self.root.attributes("-topmost", self.is_topmost)
@@ -543,7 +552,44 @@ class QuickCompressorApp:
         else:
             self.pin_btn.configure(fg=COLORS["text_dim"], bg=COLORS["bg_card"], text="📌 最前面")
 
+    def _on_drop_enter(self, event):
+        if getattr(self, 'is_converting', False):
+            return
+        if getattr(self, '_drop_overlay', None) is not None and self._drop_overlay.winfo_exists():
+            return event.action
+            
+        print(f"[DEBUG] _on_drop_enter: {getattr(event, 'action', 'none')}")
+        
+        # ToplevelではなくFrameを親の上に配置（OSのウィンドウ制御による不具合を回避）
+        self._drop_overlay = tk.Frame(self.root, bg=COLORS["bg_dark"], highlightbackground=COLORS["accent"], highlightthickness=4)
+        self._drop_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+        
+        inner_frame = tk.Frame(self._drop_overlay, bg=COLORS["bg_dark"])
+        inner_frame.pack(expand=True)
+        
+        tk.Label(inner_frame, text="📥", font=("Segoe UI", 48), fg=COLORS["accent"], bg=COLORS["bg_dark"]).pack()
+        tk.Label(inner_frame, text="ここにドロップして変更", font=("Segoe UI", 24, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]).pack(pady=10)
+        
+        if HAS_DND:
+            self._drop_overlay.drop_target_register(DND_FILES)
+            self._drop_overlay.dnd_bind('<<Drop>>', self._on_drop_from_overlay)
+            self._drop_overlay.dnd_bind('<<DropLeave>>', self._on_overlay_drop_leave)
+            
+        return event.action
+
+    def _on_overlay_drop_leave(self, event):
+        print("[DEBUG] _on_overlay_drop_leave")
+        if getattr(self, '_drop_overlay', None) is not None and self._drop_overlay.winfo_exists():
+            self._drop_overlay.destroy()
+            self._drop_overlay = None
+
+    def _on_drop_from_overlay(self, event):
+        print("[DEBUG] _on_drop_from_overlay")
+        self._on_overlay_drop_leave(None)
+        self._on_drop(event)
+
     def _on_drop(self, event):
+        self._on_overlay_drop_leave(None)
         files = self.root.tk.splitlist(event.data)
         if not files:
             return
