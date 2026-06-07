@@ -982,7 +982,7 @@ class QuickCompressorApp:
             self._save_app_config()
 
         tk.Checkbutton(
-            audio_card, text="コピー（そのまま）— 高速・音質劣化なし",
+            audio_card, text="コピー（そのまま）— 音質劣化なし",
             variable=self.audio_copy_var,
             font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
             selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
@@ -991,7 +991,7 @@ class QuickCompressorApp:
         ).pack(anchor="w", pady=2)
 
         tk.Checkbutton(
-            audio_card, text="再エンコード（AAC 128kbps）— 互換性が高い",
+            audio_card, text="再エンコード（AAC 128kbps）— 容量を抑えた標準形式",
             variable=self.audio_reencode_var,
             font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
             selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
