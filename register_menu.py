@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 GPU Video Converter - レジストリ登録スクリプト
-右クリックメニュー（コンテキストメニュー）に「GPU動画変換で圧縮」を追加・削除します。
+右クリックメニュー（コンテキストメニュー）に「Quick Compressor」を追加・削除します。
 
 HKEY_CURRENT_USER\\Software\\Classes を使用するため管理者権限は不要です。
 """
@@ -18,10 +18,10 @@ from tkinter import messagebox
 # ─────────────────────────────────────────────
 # 設定
 # ─────────────────────────────────────────────
-MENU_NAME = "GPU動画変換で圧縮..."
-MENU_NAME_PRESET = "GPU動画変換 (プリセット)"
-REGISTRY_KEY_NAME = "GPUVideoConverter"
-REGISTRY_KEY_NAME_PRESET = "GPUVideoConverterPreset"
+MENU_NAME = "Quick Compressor..."
+MENU_NAME_PRESET = "Quick Compressor (プリセット)"
+REGISTRY_KEY_NAME = "QuickCompressor"
+REGISTRY_KEY_NAME_PRESET = "QuickCompressorPreset"
 
 # 登録する動画拡張子
 VIDEO_EXTENSIONS = [
@@ -106,7 +106,7 @@ def register_context_menu():
     registered = []
     errors = []
 
-    # 先に ExtendedSubCommandsKey の内容 (GPUVideoConverter.Menu) を作成する
+    # 先に ExtendedSubCommandsKey の内容 (QuickCompressor.Menu) を作成する
     try:
         menu_key_path = rf"{REG_ROOT_PATH}\{REGISTRY_KEY_NAME}.Menu"
         
@@ -276,7 +276,7 @@ def check_registration_status() -> dict:
 class RegistrationApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("GPU動画コンバーター - メニュー登録")
+        self.root.title("Quick Compressor - メニュー登録")
         self.root.configure(bg="#f0f2f5")
         self.root.resizable(False, False)
 
@@ -324,7 +324,7 @@ class RegistrationApp:
         main.pack(fill="both", expand=True)
 
         # タイトル
-        tk.Label(main, text="⚡ GPU動画コンバーター",
+        tk.Label(main, text="⚡ Quick Compressor",
                  font=("Segoe UI", 16, "bold"), fg="#005fb8", bg="#f0f2f5"
                  ).pack(anchor="w", pady=(0, 4))
 

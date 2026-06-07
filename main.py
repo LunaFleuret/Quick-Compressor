@@ -186,7 +186,7 @@ def format_bitrate(bps: int) -> str:
 # ─────────────────────────────────────────────
 # メインアプリケーションクラス
 # ─────────────────────────────────────────────
-class GPUConverterApp:
+class QuickCompressorApp:
     def __init__(self, root: tk.Tk, input_path: str,
                  auto_start: bool = False,
                  preset: str = "p4",
@@ -208,7 +208,7 @@ class GPUConverterApp:
             codec = detect_gpu_and_default_codec()
 
         # ウィンドウ設定
-        self.root.title("GPU動画コンバーター")
+        self.root.title("Quick Compressor")
         self.root.configure(bg=COLORS["bg_dark"])
         self.root.resizable(False, False)
 
@@ -311,7 +311,7 @@ class GPUConverterApp:
         title_frame = self.title_frame
 
         tk.Label(
-            title_frame, text="⚡ GPU動画コンバーター",
+            title_frame, text="⚡ Quick Compressor",
             font=("Segoe UI", 18, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(side="left")
 
@@ -1368,7 +1368,7 @@ def main():
         sys.exit(1)
 
     root = tk.Tk()
-    app = GPUConverterApp(
+    app = QuickCompressorApp(
         root, filepath,
         auto_start=args.auto,
         preset=args.preset,
