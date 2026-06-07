@@ -73,8 +73,21 @@ def load_all_presets():
     
     if not os.path.exists(presets_path) and os.path.exists(default_path):
         try:
-            import shutil
-            shutil.copy2(default_path, presets_path)
+            with open(default_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                
+            # メインスクリプトを動的インポートしてGPUを判別
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("main_app", MAIN_SCRIPT)
+            main_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(main_module)
+            
+            default_codec = main_module.detect_gpu_and_default_codec()
+            if "AMD" in default_codec:
+                content = content.replace("NVIDIA NVENC", "AMD AMF")
+                
+            with open(presets_path, "w", encoding="utf-8") as f:
+                f.write(content)
         except Exception:
             pass
             

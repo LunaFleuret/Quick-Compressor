@@ -26,7 +26,7 @@ except ImportError:
 # ─────────────────────────────────────────────
 # バージョン情報とリポジトリ設定
 # ─────────────────────────────────────────────
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.0.1"
 GITHUB_REPO = "LunaFleuret/Quick-Compressor"
 
 # ─────────────────────────────────────────────
@@ -306,6 +306,33 @@ class QuickCompressorApp:
         pointer_x, pointer_y = self.root.winfo_pointerxy()
         x = pointer_x - (w // 2)
         y = pointer_y - (h // 2)
+
+        # 画面外にはみ出ないように補正 (Windows用)
+        try:
+            import ctypes
+            from ctypes import wintypes
+            class MONITORINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", wintypes.DWORD),
+                    ("rcMonitor", wintypes.RECT),
+                    ("rcWork", wintypes.RECT),
+                    ("dwFlags", wintypes.DWORD)
+                ]
+            MONITOR_DEFAULTTONEAREST = 2
+            pt = wintypes.POINT(pointer_x, pointer_y)
+            h_monitor = ctypes.windll.user32.MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST)
+            if h_monitor:
+                monitor_info = MONITORINFO()
+                monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
+                if ctypes.windll.user32.GetMonitorInfoW(h_monitor, ctypes.byref(monitor_info)):
+                    work_rect = monitor_info.rcWork
+                    min_x, min_y = work_rect.left, work_rect.top
+                    max_x, max_y = work_rect.right - w, work_rect.bottom - h
+                    x = max(min_x, min(x, max_x))
+                    y = max(min_y, min(y, max_y))
+        except Exception:
+            pass
+
         self.root.geometry(f"+{x}+{y}")
 
         # ウィンドウのどこでもドラッグ移動できるように設定
@@ -798,6 +825,17 @@ class QuickCompressorApp:
             command=self._start_conversion,
         )
         self.convert_btn.pack(side="right")
+
+        # 中止ボタン（初期状態では非表示）
+        self.cancel_btn = tk.Button(
+            btn_frame, text="✖ 中止",
+            font=("Segoe UI", 11, "bold"), fg=COLORS["error"],
+            bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
+            activeforeground=COLORS["error"],
+            relief="flat", padx=16, pady=10, cursor="hand2",
+            command=self._cancel_conversion,
+            highlightbackground=COLORS["error"], highlightthickness=1
+        )
 
         # ファイルを開くボタン（変換後に表示）
         self.open_btn = tk.Button(
@@ -1344,8 +1382,17 @@ class QuickCompressorApp:
         
         if not os.path.exists(presets_path) and os.path.exists(default_path):
             try:
-                import shutil
-                shutil.copy2(default_path, presets_path)
+                with open(default_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                
+                # 初回生成時のみGPUを判定し、AMDならプリセットのコーデック指定を書き換える
+                default_codec = detect_gpu_and_default_codec()
+                if "AMD" in default_codec:
+                    content = content.replace("NVIDIA NVENC", "AMD AMF")
+                    
+                with open(presets_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                    
                 # コピーした時点で、右クリックメニューのレジストリも最新プリセットで自動更新する
                 register_menu.register_context_menu()
             except Exception:
@@ -1481,10 +1528,19 @@ class QuickCompressorApp:
         if self.is_converting:
             return
         self.is_converting = True
+        self.is_cancelled = False
         self.convert_btn.configure(state="disabled", text="変換中...", bg=COLORS["text_dim"])
+        self.cancel_btn.pack(side="right", padx=(0, 8))
 
         thread = threading.Thread(target=self._run_ffmpeg, daemon=True)
         thread.start()
+
+    def _cancel_conversion(self):
+        if self.is_converting and self.process:
+            self.is_cancelled = True
+            self.process.terminate()
+            self._update_status("❌ 変換が中止されました")
+            self.cancel_btn.pack_forget()
 
     def _run_ffmpeg(self):
         cmd = self._build_ffmpeg_command()
@@ -1508,6 +1564,8 @@ class QuickCompressorApp:
             time_pattern = re.compile(r"time=(\d+):(\d+):(\d+)\.(\d+)")
 
             for line in self.process.stderr:
+                if getattr(self, "is_cancelled", False):
+                    break
                 match = time_pattern.search(line)
                 if match and duration > 0:
                     h, m, s, cs = match.groups()
@@ -1536,6 +1594,15 @@ class QuickCompressorApp:
                     f"✅ 変換完了！  {format_filesize(out_size)}{compression}"
                 )
                 self._show_success()
+            elif getattr(self, "is_cancelled", False):
+                # 中止された場合はエラーダイアログを出さずに完了処理へ
+                self._update_progress(0)
+                self._update_status("❌ 変換が中止されました")
+                if hasattr(self, "output_path") and os.path.exists(self.output_path):
+                    try:
+                        os.remove(self.output_path)
+                    except Exception:
+                        pass
             else:
                 stderr_out = self.process.stderr.read() if self.process.stderr else ""
                 self._update_status(f"❌ 変換失敗 (コード: {self.process.returncode})")
@@ -1548,9 +1615,11 @@ class QuickCompressorApp:
         finally:
             self.is_converting = False
             self.process = None
-            self.root.after(0, lambda: self.convert_btn.configure(
-                state="normal", text="⚡ 圧縮開始", bg=COLORS["accent"]
-            ))
+            def _reset_btn():
+                if hasattr(self, "cancel_btn"):
+                    self.cancel_btn.pack_forget()
+                self.convert_btn.configure(state="normal", text="⚡ 圧縮開始", bg=COLORS["accent"])
+            self.root.after(0, _reset_btn)
 
     def _update_progress(self, value):
         self.root.after(0, lambda: self.progress_var.set(value))
@@ -1664,7 +1733,7 @@ def main():
     parser.add_argument("--no-audio", action="store_true", help="音声を含めない")
     parser.add_argument("--auto", action="store_true", help="自動変換開始")
     parser.add_argument("--target-size-mb", type=float, default=None, help="目標ファイルサイズ(MB)")
-    parser.add_argument("--codec", default=detect_gpu_and_default_codec(), help="出力コーデック")
+    parser.add_argument("--codec", default=None, help="出力コーデック")
     parser.add_argument("--auto-close", action="store_true", help="変換完了後に自動で閉じる")
     parser.add_argument("--register", action="store_true", help="レジストリにメニューを登録して終了")
     parser.add_argument("--unregister", action="store_true", help="レジストリからメニューを解除して終了")
