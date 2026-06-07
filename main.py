@@ -254,11 +254,7 @@ class QuickCompressorApp:
                 "width": 1920, "height": 1080, "fps": 60, "bitrate": 0, "duration": 0, "filesize": 0, "codec": "-", "has_audio": True
             }
 
-        # 詳細設定変数（デフォルト値）
-        self.preset_var = tk.StringVar(value=preset)
-        self.audio_mode_var = tk.StringVar(value=audio_mode)
-        
-        # 設定ファイルから auto_close を読み込む
+        # 設定ファイルから設定を読み込む
         config_path = os.path.join(register_menu.DATA_DIR, "config.json")
         saved_auto_close = auto_close
         if os.path.exists(config_path):
@@ -267,8 +263,14 @@ class QuickCompressorApp:
                     config = json.load(f)
                     if "auto_close" in config:
                         saved_auto_close = bool(config["auto_close"])
+                    if "preset" in config:
+                        preset = config["preset"]
             except Exception:
                 pass
+
+        # 詳細設定変数
+        self.preset_var = tk.StringVar(value=preset)
+        self.audio_mode_var = tk.StringVar(value=audio_mode)
         self.auto_close_var = tk.BooleanVar(value=saved_auto_close)
 
         # UI用初期値保持
@@ -913,6 +915,7 @@ class QuickCompressorApp:
                 font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
                 selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
                 activeforeground=COLORS["accent"],
+                command=self._save_app_config
             )
             rb.pack(anchor="w", pady=2)
 
@@ -971,7 +974,7 @@ class QuickCompressorApp:
         y = self.root.winfo_y() + 50
         win.geometry(f"+{x}+{y}")
 
-    def _save_app_config(self):
+    def _save_app_config(self, *args):
         config_path = os.path.join(register_menu.DATA_DIR, "config.json")
         config = {}
         if os.path.exists(config_path):
@@ -981,6 +984,7 @@ class QuickCompressorApp:
             except Exception:
                 pass
         config["auto_close"] = self.auto_close_var.get()
+        config["preset"] = self.preset_var.get()
         
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
         try:
