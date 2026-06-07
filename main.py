@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-GPU Video Converter - NVIDIA NVENC
-右クリックメニューから起動し、GPU(NVENC)で高速・高画質な動画変換を行うツール。
-"""
 
 import sys
 import os
@@ -42,7 +38,7 @@ _bundled_ffprobe = os.path.join(APP_DIR, "bin", "ffprobe.exe")
 FFMPEG_PATH = _bundled_ffmpeg if os.path.exists(_bundled_ffmpeg) else "ffmpeg"
 FFPROBE_PATH = _bundled_ffprobe if os.path.exists(_bundled_ffprobe) else "ffprobe"
 
-# カラーパレット（ライト・シンプルモード）
+# カラーパレット
 COLORS = {
     "bg_dark":      "#f0f2f5",
     "bg_card":      "#ffffff",
@@ -627,7 +623,7 @@ class QuickCompressorApp:
         # 進捗バー
         self.progress_var = tk.DoubleVar(value=0)
 
-        # ttkスタイルは__init__で設定済み
+        # ttkスタイルは__init__で設定
 
         self.progress_bar = ttk.Progressbar(
             progress_frame, variable=self.progress_var,
@@ -873,8 +869,7 @@ class QuickCompressorApp:
                            "-c:v", cuvid_decoder])
             else:
                 cmd.extend(["-hwaccel", "cuda"])
-        # AMFのハードウェアデコード(d3d11va)は、ピクセルフォーマットの非互換性や
-        # 複数GPU環境でのアダプター不整合によりエラー(-22)を引き起こしやすいため、ソフトウェアデコードを使用します。
+        
             
         cmd.extend(["-i", self.input_path])
 
@@ -903,7 +898,7 @@ class QuickCompressorApp:
                 video_kbps = max(100, int(target_total_kbps - audio_kbps))
                 
                 if is_amf:
-                    # AMFエンコーダーは 'vbr' ではなく 'vbr_peak' を使用する
+                    # AMFエンコーダーはvbr_peakを使用
                     cmd.extend([
                         "-rc", "vbr_peak",
                         "-b:v", f"{video_kbps}k",
