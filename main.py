@@ -107,7 +107,9 @@ def detect_gpu_and_default_codec() -> str:
         cmd = ["wmic", "path", "win32_VideoController", "get", "name"]
         result = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=3)
         output = result.stdout.lower()
-        if "amd" in output or "radeon" in output:
+        if "nvidia" in output or "geforce" in output:
+            return "HEVC / H.265 (NVIDIA NVENC)"
+        elif "amd" in output or "radeon" in output:
             return "HEVC / H.265 (AMD AMF)"
     except Exception:
         pass
@@ -871,8 +873,8 @@ class QuickCompressorApp:
                            "-c:v", cuvid_decoder])
             else:
                 cmd.extend(["-hwaccel", "cuda"])
-        elif is_amf:
-            cmd.extend(["-hwaccel", "d3d11va"])
+        # AMFのハードウェアデコード(d3d11va)は、ピクセルフォーマットの非互換性や
+        # 複数GPU環境でのアダプター不整合によりエラー(-22)を引き起こしやすいため、ソフトウェアデコードを使用します。
             
         cmd.extend(["-i", self.input_path])
 
@@ -900,12 +902,21 @@ class QuickCompressorApp:
                 target_total_kbps = (target_size_mb * 0.95 * 8192) / duration
                 video_kbps = max(100, int(target_total_kbps - audio_kbps))
                 
-                cmd.extend([
-                    "-rc", "vbr",
-                    "-b:v", f"{video_kbps}k",
-                    "-maxrate", f"{video_kbps}k",
-                    "-bufsize", f"{video_kbps * 2}k"
-                ])
+                if is_amf:
+                    # AMFエンコーダーは 'vbr' ではなく 'vbr_peak' を使用する
+                    cmd.extend([
+                        "-rc", "vbr_peak",
+                        "-b:v", f"{video_kbps}k",
+                        "-maxrate", f"{video_kbps}k",
+                        "-bufsize", f"{video_kbps * 2}k"
+                    ])
+                else:
+                    cmd.extend([
+                        "-rc", "vbr",
+                        "-b:v", f"{video_kbps}k",
+                        "-maxrate", f"{video_kbps}k",
+                        "-bufsize", f"{video_kbps * 2}k"
+                    ])
                 
         if not is_target_size_mode:
             if encoder in ("h264_nvenc", "hevc_nvenc"):
