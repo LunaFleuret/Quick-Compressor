@@ -12,10 +12,20 @@ import argparse
 import subprocess
 import threading
 import re
+import urllib.request
+import urllib.error
+import webbrowser
+import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 import register_menu
+
+# ─────────────────────────────────────────────
+# バージョン情報とリポジトリ設定
+# ─────────────────────────────────────────────
+CURRENT_VERSION = "1.0.0"
+GITHUB_REPO = "LunaFleuret/File-Converter-MOD"
 
 # ─────────────────────────────────────────────
 # 定数とパス解決
@@ -218,7 +228,7 @@ class QuickCompressorApp:
             codec = detect_gpu_and_default_codec()
 
         # ウィンドウ設定
-        self.root.title("Quick Compressor")
+        self.root.title(f"Quick Compressor v{CURRENT_VERSION}")
         self.root.configure(bg=COLORS["bg_dark"])
         self.root.resizable(False, False)
 
@@ -298,6 +308,9 @@ class QuickCompressorApp:
 
         self.root.bind("<ButtonPress-1>", start_drag)
         self.root.bind("<B1-Motion>", dragging)
+
+        # アップデートチェック（非同期）
+        threading.Thread(target=self._check_for_updates, daemon=True).start()
 
     # ─────────────────────────────────────────
     # UI構築
@@ -1333,6 +1346,69 @@ class QuickCompressorApp:
                 self.root.destroy()
         else:
             self.root.destroy()
+
+    def _check_for_updates(self):
+        """GitHub Releases APIから最新バージョンを取得し、24時間に1回確認を行う"""
+        config_path = os.path.join(register_menu.DATA_DIR, "config.json")
+        now = time.time()
+        
+        # 24時間キャッシュチェック
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                last_check = config.get("last_update_check", 0)
+                if now - last_check < 86400:
+                    return
+            except Exception:
+                pass
+
+        # API通信を実行
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+        req = urllib.request.Request(url, headers={"User-Agent": "QuickCompressor-Updater"})
+        
+        try:
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                latest_tag = data.get("tag_name", "").strip()
+                latest_version = latest_tag.lstrip("v")
+                html_url = data.get("html_url", "")
+                
+                # バージョンが異なれば新しいバージョンありとする
+                if latest_version and latest_version != CURRENT_VERSION:
+                    self.root.after(0, self._show_update_dialog, latest_version, html_url)
+            
+            self._save_update_check_time(config_path, now)
+        except Exception:
+            # ネットワークエラーやAPI制限時は静かにスルーし、無駄な再リクエストを防ぐために時刻のみ記録
+            try:
+                self._save_update_check_time(config_path, now)
+            except Exception:
+                pass
+
+    def _save_update_check_time(self, config_path, timestamp):
+        """アップデートチェック日時をconfig.jsonに保存する"""
+        config = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            except Exception:
+                pass
+        config["last_update_check"] = timestamp
+        
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=4)
+
+    def _show_update_dialog(self, latest_version, html_url):
+        """アップデートダイアログを表示し、ブラウザでReleasesページを開く"""
+        msg = f"新しいバージョン (v{latest_version}) が見つかりました。\n現在のバージョン: v{CURRENT_VERSION}\n\nダウンロードページを開きますか？"
+        if messagebox.askyesno("アップデートのお知らせ", msg):
+            try:
+                webbrowser.open(html_url)
+            except Exception:
+                pass
 
 
 # ─────────────────────────────────────────────
