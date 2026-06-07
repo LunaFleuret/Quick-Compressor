@@ -696,16 +696,22 @@ class QuickCompressorApp:
         tk.Radiobutton(
             mode_frame, text="品質優先 (CQ)", variable=self.mode_var, value="cq",
             font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
-            selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_dark"],
-            activeforeground=COLORS["accent"], command=self._on_mode_change
-        ).pack(side="left", padx=(0, 8))
+            selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
+            activeforeground=COLORS["accent"], indicatoron=0,
+            padx=10, pady=4, relief="flat",
+            highlightbackground=COLORS["border"], highlightthickness=1,
+            command=self._on_mode_change
+        ).pack(side="left", padx=(0, 4))
 
         tk.Radiobutton(
             mode_frame, text="容量優先 (MB指定)", variable=self.mode_var, value="size",
             font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
-            selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_dark"],
-            activeforeground=COLORS["accent"], command=self._on_mode_change
-        ).pack(side="left")
+            selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
+            activeforeground=COLORS["accent"], indicatoron=0,
+            padx=10, pady=4, relief="flat",
+            highlightbackground=COLORS["border"], highlightthickness=1,
+            command=self._on_mode_change
+        ).pack(side="left", padx=(0, 4))
 
         # --- 品質優先(CQ)用UI ---
         self.cq_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
@@ -961,10 +967,13 @@ class QuickCompressorApp:
                 audio_card, text=mode_name,
                 variable=self.audio_mode_var, value=mode_val,
                 font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
-                selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
-                activeforeground=COLORS["accent"],
+                selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_card"],
+                activeforeground=COLORS["accent"], indicatoron=0,
+                padx=10, pady=6, relief="flat",
+                highlightbackground=COLORS["border"], highlightthickness=1,
+                anchor="w", command=self._save_app_config
             )
-            rb.pack(anchor="w", pady=2)
+            rb.pack(fill="x", pady=2)
 
         # --- 自動終了オプション ---
         close_option_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
