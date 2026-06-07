@@ -16,6 +16,23 @@ import tkinter as tk
 from tkinter import messagebox
 
 # ─────────────────────────────────────────────
+# ユーティリティ
+# ─────────────────────────────────────────────
+def get_app_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+def get_data_dir():
+    """設定ファイルの保存先 (%APPDATA%\QuickCompressor)"""
+    appdata = os.environ.get('APPDATA')
+    if not appdata:
+        appdata = os.path.expanduser('~')
+    d = os.path.join(appdata, "QuickCompressor")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+# ─────────────────────────────────────────────
 # 設定
 # ─────────────────────────────────────────────
 MENU_NAME = "Quick Compressor..."
@@ -29,15 +46,21 @@ VIDEO_EXTENSIONS = [
     ".wmv", ".flv", ".ts", ".m2ts", ".m4v",
 ]
 
-# main.py のパスを自動検出
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-MAIN_SCRIPT = os.path.join(SCRIPT_DIR, "main.py")
+APP_DIR = get_app_dir()
+DATA_DIR = get_data_dir()
+MAIN_SCRIPT = os.path.join(APP_DIR, "main.py")
 
-# Python実行ファイルのパス（pythonw.exe を使うとコンソール窓が出ない）
-PYTHON_EXE = sys.executable
-PYTHONW_EXE = PYTHON_EXE.replace("python.exe", "pythonw.exe")
-if not os.path.exists(PYTHONW_EXE):
-    PYTHONW_EXE = PYTHON_EXE  # pythonw が見つからない場合は python を使用
+# 実行コマンドのベース部分（.exe化されているか判定）
+IS_FROZEN = getattr(sys, 'frozen', False)
+if IS_FROZEN:
+    EXECUTABLE_CMD = f'"{sys.executable}"'
+    PYTHONW_EXE = sys.executable # GUI情報表示用
+else:
+    PYTHON_EXE = sys.executable
+    PYTHONW_EXE = PYTHON_EXE.replace("python.exe", "pythonw.exe")
+    if not os.path.exists(PYTHONW_EXE):
+        PYTHONW_EXE = PYTHON_EXE
+    EXECUTABLE_CMD = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}"'
 
 # レジストリのルート（HKCU\Software\Classes は管理者権限不要）
 REG_ROOT = winreg.HKEY_CURRENT_USER
@@ -45,8 +68,8 @@ REG_ROOT_PATH = r"Software\Classes"
 
 
 def load_all_presets():
-    presets_path = os.path.join(SCRIPT_DIR, "presets.json")
-    default_path = os.path.join(SCRIPT_DIR, "default_presets.json")
+    presets_path = os.path.join(DATA_DIR, "presets.json")
+    default_path = os.path.join(APP_DIR, "default_presets.json")
     
     if not os.path.exists(presets_path) and os.path.exists(default_path):
         try:
@@ -68,14 +91,14 @@ def load_all_presets():
 def register_context_menu():
     """右クリックメニューに登録（HKCU - 管理者権限不要）"""
     # GUI起動用
-    cmd_gui = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1"'
+    cmd_gui = f'{EXECUTABLE_CMD} "%1"'
     
     presets = []
     
     all_presets = load_all_presets()
     idx = 1
     for name, cfg in sorted(all_presets.items()):
-        cmd = f'"{PYTHONW_EXE}" "{MAIN_SCRIPT}" "%1" --auto'
+        cmd = f'{EXECUTABLE_CMD} "%1" --auto'
         if cfg.get("fps") and cfg.get("fps") != "元のまま":
             cmd += f' --fps {cfg.get("fps")}'
         if cfg.get("resolution") and cfg.get("resolution") != "元のまま":

@@ -15,12 +15,22 @@ import re
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
+import register_menu
 
 # ─────────────────────────────────────────────
-# 定数
+# 定数とパス解決
 # ─────────────────────────────────────────────
-FFMPEG_PATH = "ffmpeg"
-FFPROBE_PATH = "ffprobe"
+def get_app_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+APP_DIR = get_app_dir()
+_bundled_ffmpeg = os.path.join(APP_DIR, "bin", "ffmpeg.exe")
+_bundled_ffprobe = os.path.join(APP_DIR, "bin", "ffprobe.exe")
+
+FFMPEG_PATH = _bundled_ffmpeg if os.path.exists(_bundled_ffmpeg) else "ffmpeg"
+FFPROBE_PATH = _bundled_ffprobe if os.path.exists(_bundled_ffprobe) else "ffprobe"
 
 # カラーパレット（ライト・シンプルモード）
 COLORS = {
@@ -1085,8 +1095,8 @@ class QuickCompressorApp:
         self._refresh_preset_list()
 
     def _get_presets_data(self):
-        presets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "presets.json")
-        default_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default_presets.json")
+        presets_path = os.path.join(register_menu.DATA_DIR, "presets.json")
+        default_path = os.path.join(register_menu.APP_DIR, "default_presets.json")
         
         if not os.path.exists(presets_path) and os.path.exists(default_path):
             try:
@@ -1108,8 +1118,7 @@ class QuickCompressorApp:
         try:
             with open(presets_path, "w", encoding="utf-8") as f:
                 json.dump(presets_data, f, ensure_ascii=False, indent=4, sort_keys=True)
-            script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "register_menu.py")
-            subprocess.run([sys.executable, script_path, "--register"], check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            register_menu.register_context_menu()
             return True
         except Exception as e:
             messagebox.showerror("エラー", f"保存またはレジストリ更新に失敗しました:\n{e}")
@@ -1171,7 +1180,7 @@ class QuickCompressorApp:
         if not name:
             return
         
-        presets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "presets.json")
+        presets_path = os.path.join(register_menu.DATA_DIR, "presets.json")
         user_presets = {}
         if os.path.exists(presets_path):
             try:
@@ -1206,8 +1215,7 @@ class QuickCompressorApp:
             return
             
         try:
-            script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "register_menu.py")
-            subprocess.run([sys.executable, script_path, "--register"], check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            register_menu.register_context_menu()
             messagebox.showinfo("完了", f"プリセット「{name}」を保存し、右クリックメニューを更新しました！")
             self._toggle_preset_mode()
         except Exception as e:
@@ -1343,8 +1351,18 @@ def main():
     parser.add_argument("--target-size-mb", type=float, default=None, help="目標ファイルサイズ(MB)")
     parser.add_argument("--codec", default=detect_gpu_and_default_codec(), help="出力コーデック")
     parser.add_argument("--auto-close", action="store_true", help="変換完了後に自動で閉じる")
+    parser.add_argument("--register", action="store_true", help="レジストリにメニューを登録して終了")
+    parser.add_argument("--unregister", action="store_true", help="レジストリからメニューを解除して終了")
     
     args, _ = parser.parse_known_args()
+
+    if args.register:
+        register_menu.register_context_menu()
+        sys.exit(0)
+    
+    if args.unregister:
+        register_menu.unregister_context_menu()
+        sys.exit(0)
 
     if not args.input:
         # 引数がない場合はファイル選択ダイアログを表示
