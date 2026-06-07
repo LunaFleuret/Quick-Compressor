@@ -25,7 +25,7 @@ import register_menu
 # バージョン情報とリポジトリ設定
 # ─────────────────────────────────────────────
 CURRENT_VERSION = "1.0.0"
-GITHUB_REPO = "LunaFleuret/File-Converter-MOD"
+GITHUB_REPO = "LunaFleuret/Quick-Compressor"
 
 # ─────────────────────────────────────────────
 # 定数とパス解決
