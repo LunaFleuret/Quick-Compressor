@@ -542,6 +542,28 @@ class QuickCompressorApp:
         settings_frame = tk.Frame(parent, bg=COLORS["bg_dark"])
         settings_frame.pack(fill="x")
 
+        # --- プリセット適用 ---
+        preset_apply_frame = tk.Frame(settings_frame, bg=COLORS["bg_dark"])
+        preset_apply_frame.pack(fill="x", pady=(0, 12))
+
+        preset_apply_label_frame = tk.Frame(preset_apply_frame, bg=COLORS["bg_dark"])
+        preset_apply_label_frame.pack(fill="x")
+
+        tk.Label(preset_apply_label_frame, text="保存済みのプリセットを適用",
+                 font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 ).pack(side="left")
+
+        self.apply_preset_var = tk.StringVar(value="選択してください...")
+        self.preset_apply_combo = ttk.Combobox(
+            preset_apply_frame, textvariable=self.apply_preset_var,
+            state="readonly", font=("Segoe UI", 10)
+        )
+        self.preset_apply_combo.pack(fill="x", pady=(4, 0))
+        self.preset_apply_combo.bind("<<ComboboxSelected>>", self._on_preset_apply_select)
+        
+        # 初期リストを読み込み
+        self.root.after(100, self._update_apply_preset_list)
+
         # --- 上段: コーデック + フレームレート（横並び）---
         top_row = tk.Frame(settings_frame, bg=COLORS["bg_dark"])
         top_row.pack(fill="x", pady=(0, 12))
@@ -1240,6 +1262,49 @@ class QuickCompressorApp:
 
         self._refresh_preset_list()
 
+    def _update_apply_preset_list(self):
+        if not hasattr(self, 'preset_apply_combo'):
+            return
+        _, presets = self._get_presets_data()
+        preset_names = ["選択してください..."] + sorted(presets.keys())
+        self.preset_apply_combo.configure(values=preset_names)
+        
+        # もし現在選択中の名前が消去された場合はリセット
+        if self.apply_preset_var.get() not in preset_names:
+            self.apply_preset_var.set("選択してください...")
+
+    def _on_preset_apply_select(self, event):
+        name = self.apply_preset_var.get()
+        if name == "選択してください...":
+            return
+            
+        _, presets = self._get_presets_data()
+        if name in presets:
+            p = presets[name]
+            
+            if "codec" in p: self.codec_var.set(p["codec"])
+            if "preset" in p: self.preset_var.set(p["preset"])
+            if "fps" in p: self.fps_var.set(p["fps"])
+            if "resolution" in p: self.resolution_var.set(p["resolution"])
+            if "audio_mode" in p: self.audio_mode_var.set(p["audio_mode"])
+            if "no_audio" in p: 
+                self.audio_var.set(not p["no_audio"])
+            if "auto_close" in p: self.auto_close_var.set(p["auto_close"])
+            
+            if "target_size_mb" in p and p["target_size_mb"] is not None:
+                self.mode_var.set("size")
+                self.target_size_var.set(str(p["target_size_mb"]))
+            elif "cq" in p:
+                self.mode_var.set("cq")
+                self.quality_var.set(p["cq"])
+                self._on_quality_change(p["cq"])
+                
+            self._on_mode_change()
+            self._on_resolution_change()
+            
+            self.preset_apply_combo.selection_clear()
+            self.root.focus_set()
+
     def _get_presets_data(self):
         presets_path = os.path.join(register_menu.DATA_DIR, "presets.json")
         default_path = os.path.join(register_menu.APP_DIR, "default_presets.json")
@@ -1304,6 +1369,7 @@ class QuickCompressorApp:
             presets[new_name] = presets.pop(old_name)
             if self._save_presets_data(path, presets):
                 self._refresh_preset_list()
+                self._update_apply_preset_list()
                 self.preset_name_var.set("")
                 messagebox.showinfo("完了", "名前を変更し、メニューを更新しました！")
 
@@ -1319,6 +1385,7 @@ class QuickCompressorApp:
                 del presets[name]
                 if self._save_presets_data(path, presets):
                     self._refresh_preset_list()
+                    self._update_apply_preset_list()
                     self.preset_name_var.set("")
                     messagebox.showinfo("完了", "削除し、メニューを更新しました！")
 
@@ -1364,6 +1431,7 @@ class QuickCompressorApp:
             
         try:
             register_menu.register_context_menu()
+            self._update_apply_preset_list()
             messagebox.showinfo("完了", f"プリセット「{name}」を保存し、右クリックメニューを更新しました！")
             self._toggle_preset_mode()
         except Exception as e:
