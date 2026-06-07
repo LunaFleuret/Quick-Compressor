@@ -22,3 +22,6 @@ build/
 dist/
 Output/
 *.spec
+
+# Skill file for AI guidance
+.skill.md
