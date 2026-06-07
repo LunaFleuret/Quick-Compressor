@@ -757,6 +757,13 @@ class QuickCompressorApp:
         # --- 容量優先(MB)用UI ---
         self.size_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
 
+        size_label_frame = tk.Frame(self.size_frame, bg=COLORS["bg_dark"])
+        size_label_frame.pack(fill="x")
+        
+        tk.Label(size_label_frame, text="目標ファイルサイズ (MB)",
+                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 ).pack(side="left")
+
         size_input_frame = tk.Frame(self.size_frame, bg=COLORS["bg_dark"])
         size_input_frame.pack(anchor="w", pady=(4, 0))
         
@@ -780,6 +787,13 @@ class QuickCompressorApp:
 
         # --- 割合指定(%)用UI ---
         self.percent_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
+
+        percent_label_frame = tk.Frame(self.percent_frame, bg=COLORS["bg_dark"])
+        percent_label_frame.pack(fill="x")
+        
+        tk.Label(percent_label_frame, text="目標ファイルサイズ割合 (%)",
+                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 ).pack(side="left")
 
         percent_input_frame = tk.Frame(self.percent_frame, bg=COLORS["bg_dark"])
         percent_input_frame.pack(anchor="w", pady=(4, 0))
