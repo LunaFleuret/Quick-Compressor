@@ -757,20 +757,20 @@ class QuickCompressorApp:
         # --- 容量優先(MB)用UI ---
         self.size_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
 
-        size_label_frame = tk.Frame(self.size_frame, bg=COLORS["bg_dark"])
-        size_label_frame.pack(fill="x")
+        size_input_frame = tk.Frame(self.size_frame, bg=COLORS["bg_dark"])
+        size_input_frame.pack(anchor="w", pady=(4, 0))
         
-        tk.Label(size_label_frame, text="目標ファイルサイズ (MB)",
-                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
-                 ).pack(side="left")
-
         self.target_size_var = tk.StringVar(value=str(self._target_size_mb) if self._target_size_mb else "10")
         self.size_combo = ttk.Combobox(
-            self.size_frame, textvariable=self.target_size_var,
+            size_input_frame, textvariable=self.target_size_var,
             values=["8", "10", "25", "30", "50", "100"],
-            font=("Segoe UI", 11), width=15
+            font=("Segoe UI", 11), width=8
         )
-        self.size_combo.pack(anchor="w", pady=(4, 0))
+        self.size_combo.pack(side="left")
+        
+        tk.Label(size_input_frame, text=" MB のサイズまで圧縮",
+                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 ).pack(side="left", padx=(8, 0))
 
         tk.Label(
             self.size_frame,
@@ -782,7 +782,7 @@ class QuickCompressorApp:
         self.percent_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
 
         percent_input_frame = tk.Frame(self.percent_frame, bg=COLORS["bg_dark"])
-        percent_input_frame.pack(anchor="center", pady=(4, 0))
+        percent_input_frame.pack(anchor="w", pady=(4, 0))
         
         self.target_percent_var = tk.StringVar(value="50")
         self.percent_combo = ttk.Combobox(
@@ -800,7 +800,7 @@ class QuickCompressorApp:
             self.percent_frame,
             text="元のファイルサイズから計算し、指定した割合に収まるように自動調整します",
             font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
-        ).pack(anchor="center", pady=(4, 0))
+        ).pack(anchor="w", pady=(4, 0))
 
         # 初期表示の切り替え
         self._on_mode_change()
