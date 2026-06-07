@@ -19,7 +19,7 @@
         "resolution": "元のまま",
         "target_size_mb": 10.0
     },
-    "Discord Free (No Audio) (10MB)": {
+    "Discord Free (10MB) (No Audio)": {
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "H.264 (NVIDIA NVENC)",
@@ -39,7 +39,7 @@
         "resolution": "元のまま",
         "target_size_mb": 45.0
     },
-    "Discord Nitro Basic (No Audio) (50MB)": {
+    "Discord Nitro Basic (50MB) (No Audio)": {
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "H.264 (NVIDIA NVENC)",
@@ -59,7 +59,7 @@
         "resolution": "元のまま",
         "target_size_mb": 30.0
     },
-    "Steam Chat (No Audio) (30MB)": {
+    "Steam Chat (30MB) (No Audio)": {
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
