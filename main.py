@@ -1115,6 +1115,8 @@ class QuickCompressorApp:
             try:
                 import shutil
                 shutil.copy2(default_path, presets_path)
+                # コピーした時点で、右クリックメニューのレジストリも最新プリセットで自動更新する
+                register_menu.register_context_menu()
             except Exception:
                 pass
 
