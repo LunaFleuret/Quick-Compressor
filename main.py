@@ -958,22 +958,46 @@ class QuickCompressorApp:
             font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
         ).pack(anchor="w", pady=(0, 6))
 
-        audio_modes = [
-            ("copy", "コピー（そのまま）— 高速・音質劣化なし"),
-            ("reencode", "再エンコード（AAC 128kbps）— 互換性が高い"),
-        ]
-        for mode_val, mode_name in audio_modes:
-            rb = tk.Radiobutton(
-                audio_card, text=mode_name,
-                variable=self.audio_mode_var, value=mode_val,
-                font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
-                selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_card"],
-                activeforeground=COLORS["accent"], indicatoron=0,
-                padx=10, pady=6, relief="flat",
-                highlightbackground=COLORS["border"], highlightthickness=1,
-                anchor="w", command=self._save_app_config
-            )
-            rb.pack(fill="x", pady=2)
+        self.audio_copy_var = tk.BooleanVar(value=self.audio_mode_var.get() == "copy")
+        self.audio_reencode_var = tk.BooleanVar(value=self.audio_mode_var.get() == "reencode")
+        
+        def _sync_audio_cbs(*args):
+            val = self.audio_mode_var.get()
+            self.audio_copy_var.set(val == "copy")
+            self.audio_reencode_var.set(val == "reencode")
+            
+        trace_id_audio = self.audio_mode_var.trace_add("write", _sync_audio_cbs)
+        
+        def _on_destroy_audio(event):
+            if event.widget == win:
+                try:
+                    self.audio_mode_var.trace_remove("write", trace_id_audio)
+                except Exception:
+                    pass
+        win.bind("<Destroy>", _on_destroy_audio, add="+")
+
+        def _on_audio_cb_click(mode_val):
+            self.audio_mode_var.set(mode_val)
+            _sync_audio_cbs()
+            self._save_app_config()
+
+        tk.Checkbutton(
+            audio_card, text="コピー（そのまま）— 高速・音質劣化なし",
+            variable=self.audio_copy_var,
+            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
+            activeforeground=COLORS["accent"],
+            command=lambda: _on_audio_cb_click("copy")
+        ).pack(anchor="w", pady=2)
+
+        tk.Checkbutton(
+            audio_card, text="再エンコード（AAC 128kbps）— 互換性が高い",
+            variable=self.audio_reencode_var,
+            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
+            activeforeground=COLORS["accent"],
+            command=lambda: _on_audio_cb_click("reencode")
+        ).pack(anchor="w", pady=2)
 
         # --- 自動終了オプション ---
         close_option_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
