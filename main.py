@@ -908,16 +908,39 @@ class QuickCompressorApp:
             font=("Segoe UI", 8), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
         ).pack(anchor="w", pady=(0, 6))
 
-        for preset_val, preset_name in NVENC_PRESETS:
-            rb = tk.Radiobutton(
-                preset_card, text=f"{preset_val}  {preset_name}",
-                variable=self.preset_var, value=preset_val,
-                font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
-                selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
-                activeforeground=COLORS["accent"],
-                command=self._save_app_config
-            )
-            rb.pack(anchor="w", pady=2)
+        preset_display_values = [f"{v}  {n}" for v, n in NVENC_PRESETS]
+        self.preset_display_var = tk.StringVar()
+        
+        def _update_preset_display(*args):
+            current_val = self.preset_var.get()
+            current_display = next((f"{v}  {n}" for v, n in NVENC_PRESETS if v == current_val), f"p4  標準（バランス）")
+            self.preset_display_var.set(current_display)
+            
+        _update_preset_display()
+        trace_id = self.preset_var.trace_add("write", _update_preset_display)
+        
+        def _on_destroy(event):
+            if event.widget == win:
+                try:
+                    self.preset_var.trace_remove("write", trace_id)
+                except Exception:
+                    pass
+        win.bind("<Destroy>", _on_destroy, add="+")
+
+        preset_combo = ttk.Combobox(
+            preset_card, textvariable=self.preset_display_var,
+            values=preset_display_values, state="readonly",
+            font=("Segoe UI", 11), width=26
+        )
+        preset_combo.pack(anchor="w", pady=(2, 6))
+        
+        def _on_combo_select(event):
+            selected = self.preset_display_var.get()
+            val = selected.split("  ")[0]
+            self.preset_var.set(val)
+            self._save_app_config()
+            
+        preset_combo.bind("<<ComboboxSelected>>", _on_combo_select)
 
         # --- 音声処理モード ---
         audio_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
