@@ -377,7 +377,7 @@ class QuickCompressorApp:
         # --- プリセット作成モード バナー (初期は非表示) ---
         self.preset_banner = tk.Frame(main_frame, bg=COLORS["success"], pady=8)
         self.preset_banner_label = tk.Label(
-            self.preset_banner, text="🎁 プリセット作成モード：現在の設定をプリセットとして保存できます",
+            self.preset_banner, text="プリセット作成モード：現在の設定をプリセットとして保存できます",
             font=("Segoe UI", 10, "bold"), fg=COLORS["text_bright"], bg=COLORS["success"]
         )
         self.preset_banner_label.pack()
@@ -425,7 +425,7 @@ class QuickCompressorApp:
 
         # プリセット作成ボタン
         self.preset_btn = tk.Button(
-            self.action_frame, text="🎁 プリセット作成",
+            self.action_frame, text="プリセット作成",
             font=("Segoe UI", 11), fg=COLORS["success"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["success"],
@@ -436,7 +436,7 @@ class QuickCompressorApp:
         self.preset_btn.pack(side="right", padx=(0, 8))
 
         preset_manage_btn = tk.Button(
-            self.action_frame, text="📋 プリセット管理",
+            self.action_frame, text="プリセット管理",
             font=("Segoe UI", 11), fg=COLORS["accent"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["accent"],
@@ -1284,7 +1284,7 @@ class QuickCompressorApp:
                 activebackground=COLORS["accent_hover"],
             )
             self.preset_btn.configure(
-                text="🎁 プリセット作成",
+                text="プリセット作成",
                 fg=COLORS["success"],
                 activeforeground=COLORS["success"]
             )
@@ -1300,7 +1300,7 @@ class QuickCompressorApp:
 
         win = tk.Toplevel(self.root)
         self._manager_window = win
-        win.title("📋 プリセット管理")
+        win.title("プリセット管理")
         win.configure(bg=COLORS["bg_dark"])
         win.geometry("400x480")
         win.transient(self.root)
