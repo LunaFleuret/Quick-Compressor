@@ -257,6 +257,7 @@ class QuickCompressorApp:
         # 設定ファイルから設定を読み込む
         config_path = os.path.join(register_menu.DATA_DIR, "config.json")
         saved_auto_close = auto_close
+        saved_hide_no_audio = False
         if os.path.exists(config_path):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -265,6 +266,8 @@ class QuickCompressorApp:
                         saved_auto_close = bool(config["auto_close"])
                     if "preset" in config:
                         preset = config["preset"]
+                    if "hide_no_audio_presets" in config:
+                        saved_hide_no_audio = bool(config["hide_no_audio_presets"])
             except Exception:
                 pass
 
@@ -272,6 +275,7 @@ class QuickCompressorApp:
         self.preset_var = tk.StringVar(value=preset)
         self.audio_mode_var = tk.StringVar(value=audio_mode)
         self.auto_close_var = tk.BooleanVar(value=saved_auto_close)
+        self.hide_no_audio_presets_var = tk.BooleanVar(value=saved_hide_no_audio)
 
         # UI用初期値保持
         self._init_fps = fps
@@ -1089,6 +1093,8 @@ class QuickCompressorApp:
                 pass
         config["auto_close"] = self.auto_close_var.get()
         config["preset"] = self.preset_var.get()
+        if hasattr(self, 'hide_no_audio_presets_var'):
+            config["hide_no_audio_presets"] = self.hide_no_audio_presets_var.get()
         
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
         try:
@@ -1427,6 +1433,25 @@ class QuickCompressorApp:
         self.preset_listbox.pack(side="left", fill="both", expand=True, padx=2, pady=2)
         scrollbar.config(command=self.preset_listbox.yview)
 
+        def _on_hide_cb_click():
+            self._save_app_config()
+            self._refresh_preset_list()
+            self._update_apply_preset_list()
+            try:
+                import register_menu
+                register_menu.register_context_menu()
+            except Exception:
+                pass
+
+        tk.Checkbutton(
+            pad, text="デフォルトのノーオーディオプリセットを非表示",
+            variable=self.hide_no_audio_presets_var,
+            font=("Segoe UI", 10), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_dark"],
+            activeforeground=COLORS["accent"],
+            command=_on_hide_cb_click
+        ).pack(anchor="w", pady=(4, 12))
+
         edit_frame = tk.Frame(pad, bg=COLORS["bg_dark"])
         edit_frame.pack(fill="x")
 
@@ -1487,7 +1512,7 @@ class QuickCompressorApp:
     def _update_apply_preset_list(self):
         if not hasattr(self, 'preset_apply_combo'):
             return
-        _, presets = self._get_presets_data()
+        _, presets = self._get_filtered_presets_data()
         preset_names = ["選択してください..."] + sorted(presets.keys())
         self.preset_apply_combo.configure(values=preset_names)
         
@@ -1562,6 +1587,25 @@ class QuickCompressorApp:
                 pass
         return presets_path, presets
 
+    def _get_filtered_presets_data(self):
+        path, presets = self._get_presets_data()
+        if hasattr(self, 'hide_no_audio_presets_var') and self.hide_no_audio_presets_var.get():
+            default_path = os.path.join(register_menu.APP_DIR, "default_presets.json")
+            default_presets = {}
+            if os.path.exists(default_path):
+                try:
+                    with open(default_path, "r", encoding="utf-8") as f:
+                        default_presets = json.load(f)
+                except Exception:
+                    pass
+            filtered = {}
+            for name, p in presets.items():
+                if name in default_presets and p.get("no_audio"):
+                    continue
+                filtered[name] = p
+            return path, filtered
+        return path, presets
+
     def _save_presets_data(self, presets_path, presets_data):
         try:
             with open(presets_path, "w", encoding="utf-8") as f:
@@ -1574,7 +1618,7 @@ class QuickCompressorApp:
 
     def _refresh_preset_list(self):
         self.preset_listbox.delete(0, tk.END)
-        _, presets = self._get_presets_data()
+        _, presets = self._get_filtered_presets_data()
         for name in sorted(presets.keys()):
             self.preset_listbox.insert(tk.END, name)
 

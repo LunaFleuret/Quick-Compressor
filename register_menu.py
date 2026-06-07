@@ -98,7 +98,33 @@ def load_all_presets():
                 presets.update(json.load(f))
         except Exception:
             pass
-            
+
+    config_path = os.path.join(DATA_DIR, "config.json")
+    hide_no_audio = False
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                hide_no_audio = bool(config.get("hide_no_audio_presets", False))
+        except Exception:
+            pass
+
+    default_presets = {}
+    if hide_no_audio and os.path.exists(default_path):
+        try:
+            with open(default_path, "r", encoding="utf-8") as f:
+                default_presets = json.load(f)
+        except Exception:
+            pass
+
+    if hide_no_audio:
+        filtered_presets = {}
+        for name, p in presets.items():
+            if name in default_presets and p.get("no_audio"):
+                continue
+            filtered_presets[name] = p
+        return filtered_presets
+
     return presets
 
 def register_context_menu():
