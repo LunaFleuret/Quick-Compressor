@@ -1074,8 +1074,9 @@ class QuickCompressorApp:
             if duration > 0:
                 is_target_size_mode = True
                 audio_kbps = 64 if (self.audio_var.get() and self.video_info.get("has_audio")) else 0
-                # 容量超過を防ぐため、目標サイズの95%をターゲットにする（メタデータなどのマージン）
-                target_total_kbps = (target_size_mb * 0.95 * 8192) / duration
+                # AMD (AMF) はvbr_peakの特性上上振れしやすいためマージンを多めに取る (90%)
+                margin = 0.90 if is_amf else 0.95
+                target_total_kbps = (target_size_mb * margin * 8192) / duration
                 video_kbps = max(100, int(target_total_kbps - audio_kbps))
                 
                 if is_amf:
