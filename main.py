@@ -713,6 +713,16 @@ class QuickCompressorApp:
             command=self._on_mode_change
         ).pack(side="left", padx=(0, 4))
 
+        tk.Radiobutton(
+            mode_frame, text="割合指定 (%)", variable=self.mode_var, value="percent",
+            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
+            activeforeground=COLORS["accent"], indicatoron=0,
+            padx=10, pady=4, relief="flat",
+            highlightbackground=COLORS["border"], highlightthickness=1,
+            command=self._on_mode_change
+        ).pack(side="left", padx=(0, 4))
+
         # --- 品質優先(CQ)用UI ---
         self.cq_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
         
@@ -765,6 +775,30 @@ class QuickCompressorApp:
         tk.Label(
             self.size_frame,
             text="指定した容量に収まるようにビットレートを自動調整します",
+            font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
+        ).pack(anchor="w", pady=(4, 0))
+
+        # --- 割合指定(%)用UI ---
+        self.percent_frame = tk.Frame(quality_frame, bg=COLORS["bg_dark"])
+
+        percent_input_frame = tk.Frame(self.percent_frame, bg=COLORS["bg_dark"])
+        percent_input_frame.pack(fill="x")
+        
+        self.target_percent_var = tk.StringVar(value="50")
+        self.percent_combo = ttk.Combobox(
+            percent_input_frame, textvariable=self.target_percent_var,
+            values=["25", "30", "50", "75", "80"],
+            font=("Segoe UI", 11), width=8
+        )
+        self.percent_combo.pack(side="left", pady=(4, 0))
+        
+        tk.Label(percent_input_frame, text=" % のサイズまで圧縮",
+                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 ).pack(side="left", pady=(4, 0), padx=(8, 0))
+
+        tk.Label(
+            self.percent_frame,
+            text="元のファイルサイズから計算し、指定した割合に収まるように自動調整します",
             font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
         ).pack(anchor="w", pady=(4, 0))
 
@@ -1079,12 +1113,21 @@ class QuickCompressorApp:
         )
 
     def _on_mode_change(self):
-        if self.mode_var.get() == "cq":
+        mode = self.mode_var.get()
+        if mode == "cq":
             self.size_frame.pack_forget()
+            if hasattr(self, 'percent_frame'):
+                self.percent_frame.pack_forget()
             self.cq_frame.pack(fill="x")
-        else:
+        elif mode == "size":
             self.cq_frame.pack_forget()
+            if hasattr(self, 'percent_frame'):
+                self.percent_frame.pack_forget()
             self.size_frame.pack(fill="x")
+        elif mode == "percent":
+            self.cq_frame.pack_forget()
+            self.size_frame.pack_forget()
+            self.percent_frame.pack(fill="x")
 
     def _on_quality_change(self, value):
         cq = int(float(value))
@@ -1164,6 +1207,14 @@ class QuickCompressorApp:
         if self.mode_var.get() == "size":
             try:
                 target_size_mb = float(self.target_size_var.get())
+            except ValueError:
+                target_size_mb = None
+        elif self.mode_var.get() == "percent":
+            try:
+                percent = float(self.target_percent_var.get())
+                orig_bytes = self.video_info.get("filesize", 0)
+                if orig_bytes > 0:
+                    target_size_mb = (orig_bytes / 1048576.0) * (percent / 100.0)
             except ValueError:
                 target_size_mb = None
 
@@ -1451,6 +1502,10 @@ class QuickCompressorApp:
             if "target_size_mb" in p and p["target_size_mb"] is not None:
                 self.mode_var.set("size")
                 self.target_size_var.set(str(p["target_size_mb"]))
+            elif "target_percent" in p and p["target_percent"] is not None:
+                self.mode_var.set("percent")
+                if hasattr(self, 'target_percent_var'):
+                    self.target_percent_var.set(str(p["target_percent"]))
             elif "cq" in p:
                 self.mode_var.set("cq")
                 self.quality_var.set(p["cq"])
@@ -1585,6 +1640,11 @@ class QuickCompressorApp:
                 user_presets[name]["target_size_mb"] = float(self.target_size_var.get())
             except ValueError:
                 user_presets[name]["target_size_mb"] = 10.0
+        elif self.mode_var.get() == "percent":
+            try:
+                user_presets[name]["target_percent"] = float(self.target_percent_var.get())
+            except ValueError:
+                user_presets[name]["target_percent"] = 50.0
         else:
             user_presets[name]["cq"] = self.quality_var.get()
         
