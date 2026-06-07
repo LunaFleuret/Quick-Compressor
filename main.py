@@ -43,9 +43,12 @@ COLORS = {
 
 # コーデック定義
 CODECS = {
-    "H.264 (NVENC)": {"encoder": "h264_nvenc", "ext": "mp4"},
-    "HEVC / H.265 (NVENC)": {"encoder": "hevc_nvenc", "ext": "mp4"},
-    "AV1 (NVENC)": {"encoder": "av1_nvenc", "ext": "mp4"},
+    "H.264 (NVIDIA NVENC)": {"encoder": "h264_nvenc", "ext": "mp4"},
+    "HEVC / H.265 (NVIDIA NVENC)": {"encoder": "hevc_nvenc", "ext": "mp4"},
+    "AV1 (NVIDIA NVENC)": {"encoder": "av1_nvenc", "ext": "mp4"},
+    "H.264 (AMD AMF)": {"encoder": "h264_amf", "ext": "mp4"},
+    "HEVC / H.265 (AMD AMF)": {"encoder": "hevc_amf", "ext": "mp4"},
+    "AV1 (AMD AMF)": {"encoder": "av1_amf", "ext": "mp4"},
 }
 
 FRAME_RATES = ["元のまま", "24", "30", "60"]
@@ -78,6 +81,18 @@ NVENC_PRESETS = [
 # ─────────────────────────────────────────────
 # ユーティリティ関数
 # ─────────────────────────────────────────────
+def detect_gpu_and_default_codec() -> str:
+    """WindowsのWMI(wmic)を利用してGPUを判別し、最適なデフォルトコーデックを返す"""
+    try:
+        cmd = ["wmic", "path", "win32_VideoController", "get", "name"]
+        result = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=3)
+        output = result.stdout.lower()
+        if "amd" in output or "radeon" in output:
+            return "HEVC / H.265 (AMD AMF)"
+    except Exception:
+        pass
+    return "HEVC / H.265 (NVIDIA NVENC)"
+
 def get_video_info(filepath: str) -> dict:
     """FFprobeで動画の情報を取得する"""
     cmd = [
@@ -181,13 +196,16 @@ class GPUConverterApp:
                  audio_mode: str = "copy",
                  no_audio: bool = False,
                  target_size_mb: float = None,
-                 codec: str = "HEVC / H.265 (NVENC)",
+                 codec: str = None,
                  auto_close: bool = False):
         self.preset_mode = False
         self.root = root
         self.input_path = input_path
         self.is_converting = False
         self.process = None
+
+        if codec is None:
+            codec = detect_gpu_and_default_codec()
 
         # ウィンドウ設定
         self.root.title("GPU動画コンバーター")
@@ -815,16 +833,24 @@ class GPUConverterApp:
             counter += 1
 
         # GPU最適化: 入力コーデックに対応するCUVIDデコーダーで読み込み高速化
-        input_codec = self.video_info.get("codec", "")
-        cuvid_decoder = CUVID_DECODERS.get(input_codec)
-        use_gpu_decode = cuvid_decoder is not None
+        is_nvenc = "nvenc" in encoder
+        is_amf = "amf" in encoder
 
         cmd = [FFMPEG_PATH, "-y"]
-        if use_gpu_decode:
-            cmd.extend(["-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
-                       "-c:v", cuvid_decoder])
-        else:
-            cmd.extend(["-hwaccel", "cuda"])
+        use_gpu_decode = False
+
+        if is_nvenc:
+            input_codec = self.video_info.get("codec", "")
+            cuvid_decoder = CUVID_DECODERS.get(input_codec)
+            use_gpu_decode = cuvid_decoder is not None
+            if use_gpu_decode:
+                cmd.extend(["-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
+                           "-c:v", cuvid_decoder])
+            else:
+                cmd.extend(["-hwaccel", "cuda"])
+        elif is_amf:
+            cmd.extend(["-hwaccel", "d3d11va"])
+            
         cmd.extend(["-i", self.input_path])
 
         # ビデオ設定
@@ -863,9 +889,21 @@ class GPUConverterApp:
                 cmd.extend(["-rc", "constqp", "-qp", str(cq)])
             elif encoder == "av1_nvenc":
                 cmd.extend(["-cq", str(cq)])
+            elif is_amf:
+                # AMD AMF の固定画質設定 (CQモード)
+                cmd.extend(["-rc", "cqp", "-qp_p", str(cq), "-qp_i", str(cq)])
 
         # NVENC プリセット（設定ダイアログから取得）
-        cmd.extend(["-preset", self.preset_var.get()])
+        preset_val = self.preset_var.get()
+        if is_amf:
+            amf_preset = "balanced"
+            if preset_val in ("p1", "p2", "p3"):
+                amf_preset = "speed"
+            elif preset_val in ("p5", "p6", "p7"):
+                amf_preset = "quality"
+            cmd.extend(["-preset", amf_preset])
+        else:
+            cmd.extend(["-preset", preset_val])
 
         # ビデオフィルター
         filters = []
@@ -1303,7 +1341,7 @@ def main():
     parser.add_argument("--no-audio", action="store_true", help="音声を含めない")
     parser.add_argument("--auto", action="store_true", help="自動変換開始")
     parser.add_argument("--target-size-mb", type=float, default=None, help="目標ファイルサイズ(MB)")
-    parser.add_argument("--codec", default="HEVC / H.265 (NVENC)", help="出力コーデック")
+    parser.add_argument("--codec", default=detect_gpu_and_default_codec(), help="出力コーデック")
     parser.add_argument("--auto-close", action="store_true", help="変換完了後に自動で閉じる")
     
     args, _ = parser.parse_known_args()
