@@ -44,7 +44,7 @@ if exist %ISCC% (
     echo Outputフォルダを開きます...
     explorer Output
 ) else (
-    echo [エラー] Inno Setup (ISCC.exe) が見つかりません。
+    echo [エラー] Inno Setup ^(ISCC.exe^) が見つかりません。
     echo インストーラーの作成をスキップしました。手動で build_installer.iss をコンパイルしてください。
     echo =======================================
 )
