@@ -257,7 +257,19 @@ class QuickCompressorApp:
         # 詳細設定変数（デフォルト値）
         self.preset_var = tk.StringVar(value=preset)
         self.audio_mode_var = tk.StringVar(value=audio_mode)
-        self.auto_close_var = tk.BooleanVar(value=auto_close)
+        
+        # 設定ファイルから auto_close を読み込む
+        config_path = os.path.join(register_menu.DATA_DIR, "config.json")
+        saved_auto_close = auto_close
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                    if "auto_close" in config:
+                        saved_auto_close = bool(config["auto_close"])
+            except Exception:
+                pass
+        self.auto_close_var = tk.BooleanVar(value=saved_auto_close)
 
         # UI用初期値保持
         self._init_fps = fps
@@ -343,66 +355,67 @@ class QuickCompressorApp:
 
         # --- タイトル ---
         self.title_frame = tk.Frame(main_frame, bg=COLORS["bg_dark"])
-        self.title_frame.pack(fill="x", pady=(0, 16))
-        title_frame = self.title_frame
+        self.title_frame.pack(fill="x", pady=(0, 8))
 
         tk.Label(
-            title_frame, text="⚡ Quick Compressor",
+            self.title_frame, text="⚡ Quick Compressor",
             font=("Segoe UI", 18, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(side="left")
+
+        # --- サブアクションバー (2段目) ---
+        self.action_frame = tk.Frame(main_frame, bg=COLORS["bg_dark"])
+        self.action_frame.pack(fill="x", pady=(0, 16))
 
         # ピン留めボタン (Always on top)
         self.is_topmost = False
         self.pin_btn = tk.Button(
-            title_frame, text="📌 最前面",
-            font=("Segoe UI", 9), fg=COLORS["text_dim"],
+            self.action_frame, text="📌 最前面",
+            font=("Segoe UI", 11), fg=COLORS["text_dim"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["accent"],
             relief="flat", cursor="hand2", padx=8, pady=2,
             highlightbackground=COLORS["border"], highlightthickness=1,
             command=self._toggle_topmost,
         )
-        self.pin_btn.pack(side="right", pady=(8, 0))
+        self.pin_btn.pack(side="right")
+        
+        # デフォルトで最前面に固定
+        self._toggle_topmost()
 
         # 設定ボタン
         settings_btn = tk.Button(
-            title_frame, text="⚙ 設定",
-            font=("Segoe UI", 9), fg=COLORS["text_dim"],
+            self.action_frame, text="⚙ 設定",
+            font=("Segoe UI", 11), fg=COLORS["text_dim"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["accent"],
             relief="flat", cursor="hand2", padx=8, pady=2,
             highlightbackground=COLORS["border"], highlightthickness=1,
             command=self._open_settings,
         )
-        settings_btn.pack(side="right", pady=(8, 0), padx=(0, 8))
+        settings_btn.pack(side="right", padx=(0, 8))
 
         # プリセット作成ボタン
         self.preset_btn = tk.Button(
-            title_frame, text="🎁 プリセット作成",
-            font=("Segoe UI", 9), fg=COLORS["success"],
+            self.action_frame, text="🎁 プリセット作成",
+            font=("Segoe UI", 11), fg=COLORS["success"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["success"],
             relief="flat", cursor="hand2", padx=8, pady=2,
             highlightbackground=COLORS["border"], highlightthickness=1,
             command=self._toggle_preset_mode,
         )
-        self.preset_btn.pack(side="right", pady=(8, 0), padx=(0, 8))
+        self.preset_btn.pack(side="right", padx=(0, 8))
 
         preset_manage_btn = tk.Button(
-            title_frame, text="📋 プリセット管理",
-            font=("Segoe UI", 9), fg=COLORS["accent"],
+            self.action_frame, text="📋 プリセット管理",
+            font=("Segoe UI", 11), fg=COLORS["accent"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["accent"],
             relief="flat", cursor="hand2", padx=8, pady=2,
             highlightbackground=COLORS["border"], highlightthickness=1,
             command=self._open_preset_manager,
         )
-        preset_manage_btn.pack(side="right", pady=(8, 0), padx=(0, 8))
-
-        tk.Label(
-            title_frame, text="NVIDIA NVENC",
-            font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
-        ).pack(side="right", pady=(8, 0), padx=(0, 8))
+        preset_manage_btn.pack(side="right", padx=(0, 8))
 
         # --- ファイル情報カード ---
         self._build_file_info_card(main_frame)
@@ -550,13 +563,13 @@ class QuickCompressorApp:
         preset_apply_label_frame.pack(fill="x")
 
         tk.Label(preset_apply_label_frame, text="保存済みのプリセットを適用",
-                 font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left")
 
         self.apply_preset_var = tk.StringVar(value="選択してください...")
         self.preset_apply_combo = ttk.Combobox(
             preset_apply_frame, textvariable=self.apply_preset_var,
-            state="readonly", font=("Segoe UI", 10)
+            state="readonly", font=("Segoe UI", 11)
         )
         self.preset_apply_combo.pack(fill="x", pady=(4, 0))
         self.preset_apply_combo.bind("<<ComboboxSelected>>", self._on_preset_apply_select)
@@ -573,13 +586,13 @@ class QuickCompressorApp:
         codec_frame.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
         tk.Label(codec_frame, text="出力コーデック",
-                 font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
         self.codec_var = tk.StringVar(value=self._init_codec)
         codec_combo = ttk.Combobox(codec_frame, textvariable=self.codec_var,
                                    values=list(CODECS.keys()), state="readonly",
-                                   font=("Segoe UI", 10), width=22)
+                                   font=("Segoe UI", 11), width=22)
         codec_combo.pack(fill="x", pady=(4, 0))
 
         # フレームレート
@@ -587,7 +600,7 @@ class QuickCompressorApp:
         fps_frame.pack(side="left", fill="x", expand=True, padx=(8, 0))
 
         tk.Label(fps_frame, text="フレームレート",
-                 font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
         self.fps_var = tk.StringVar(value=self._init_fps)
@@ -597,7 +610,7 @@ class QuickCompressorApp:
         for fps_option in FRAME_RATES:
             btn = tk.Radiobutton(
                 fps_btn_frame, text=fps_option, variable=self.fps_var, value=fps_option,
-                font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_dark"],
+                font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
                 selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
                 activeforeground=COLORS["accent"], indicatoron=0,
                 padx=10, pady=4, relief="flat",
@@ -610,7 +623,7 @@ class QuickCompressorApp:
         resolution_frame.pack(fill="x", pady=(0, 12))
 
         tk.Label(resolution_frame, text="解像度",
-                 font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
         self.resolution_var = tk.StringVar(value=self._init_resolution)
@@ -620,7 +633,7 @@ class QuickCompressorApp:
         for res_option in RESOLUTIONS:
             btn = tk.Radiobutton(
                 resolution_btn_frame, text=res_option, variable=self.resolution_var, value=res_option,
-                font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_dark"],
+                font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
                 selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
                 activeforeground=COLORS["accent"], indicatoron=0,
                 padx=10, pady=4, relief="flat",
@@ -633,7 +646,7 @@ class QuickCompressorApp:
         self.resolution_preview_label = tk.Label(
             resolution_frame,
             text=f"{self.video_info['width']}×{self.video_info['height']} → {self.video_info['width']}×{self.video_info['height']}",
-            font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
+            font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
         )
         self.resolution_preview_label.pack(anchor="w")
 
@@ -646,22 +659,22 @@ class QuickCompressorApp:
         mode_frame.pack(fill="x", pady=(0, 8))
 
         tk.Label(mode_frame, text="設定モード",
-                 font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left", padx=(0, 12))
 
         self.mode_var = tk.StringVar(value="cq" if not self._target_size_mb else "size")
         
         tk.Radiobutton(
             mode_frame, text="品質優先 (CQ)", variable=self.mode_var, value="cq",
-            font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_dark"],
-            selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
+            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_dark"],
             activeforeground=COLORS["accent"], command=self._on_mode_change
         ).pack(side="left", padx=(0, 8))
 
         tk.Radiobutton(
             mode_frame, text="容量優先 (MB指定)", variable=self.mode_var, value="size",
-            font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_dark"],
-            selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
+            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_dark"],
             activeforeground=COLORS["accent"], command=self._on_mode_change
         ).pack(side="left")
 
@@ -672,12 +685,12 @@ class QuickCompressorApp:
         quality_label_frame.pack(fill="x")
 
         tk.Label(quality_label_frame, text="画質 (品質優先 ← → ファイルサイズ優先)",
-                 font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left")
 
         self.quality_value_label = tk.Label(
             quality_label_frame, text="CQ 24 (高画質)",
-            font=("Segoe UI", 10, "bold"), fg=COLORS["success"], bg=COLORS["bg_dark"]
+            font=("Segoe UI", 12, "bold"), fg=COLORS["success"], bg=COLORS["bg_dark"]
         )
         self.quality_value_label.pack(side="right")
 
@@ -692,7 +705,7 @@ class QuickCompressorApp:
         self.quality_desc_label = tk.Label(
             self.cq_frame,
             text="CQ値が低い ← 高画質・大ファイル ｜ 低画質・小ファイル → CQ値が高い",
-            font=("Segoe UI", 8), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
+            font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
         )
         self.quality_desc_label.pack(anchor="w")
 
@@ -703,21 +716,21 @@ class QuickCompressorApp:
         size_label_frame.pack(fill="x")
         
         tk.Label(size_label_frame, text="目標ファイルサイズ (MB)",
-                 font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left")
 
         self.target_size_var = tk.StringVar(value=str(self._target_size_mb) if self._target_size_mb else "10")
         self.size_combo = ttk.Combobox(
             self.size_frame, textvariable=self.target_size_var,
             values=["8", "10", "25", "30", "50", "100"],
-            font=("Segoe UI", 10), width=15
+            font=("Segoe UI", 11), width=15
         )
         self.size_combo.pack(anchor="w", pady=(4, 0))
 
         tk.Label(
             self.size_frame,
             text="指定した容量に収まるようにビットレートを自動調整します",
-            font=("Segoe UI", 8), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
+            font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
         ).pack(anchor="w", pady=(4, 0))
 
         # 初期表示の切り替え
@@ -731,8 +744,8 @@ class QuickCompressorApp:
         self.audio_check_btn = tk.Checkbutton(
             audio_frame, text="音声を含める",
             variable=self.audio_var,
-            font=("Segoe UI", 10), fg=COLORS["text"], bg=COLORS["bg_dark"],
-            selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
+            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_dark"],
             activeforeground=COLORS["accent"],
         )
         self.audio_check_btn.pack(anchor="w")
@@ -859,11 +872,11 @@ class QuickCompressorApp:
             rb = tk.Radiobutton(
                 preset_card, text=f"{preset_val}  {preset_name}",
                 variable=self.preset_var, value=preset_val,
-                font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_card"],
-                selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_card"],
+                font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+                selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
                 activeforeground=COLORS["accent"],
             )
-            rb.pack(anchor="w")
+            rb.pack(anchor="w", pady=2)
 
         # --- 音声処理モード ---
         audio_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
@@ -883,11 +896,11 @@ class QuickCompressorApp:
             rb = tk.Radiobutton(
                 audio_card, text=mode_name,
                 variable=self.audio_mode_var, value=mode_val,
-                font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_card"],
-                selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_card"],
+                font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+                selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
                 activeforeground=COLORS["accent"],
             )
-            rb.pack(anchor="w")
+            rb.pack(anchor="w", pady=2)
 
         # --- 自動終了オプション ---
         close_option_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
@@ -897,10 +910,11 @@ class QuickCompressorApp:
         tk.Checkbutton(
             close_option_card, text="変換完了後に自動で閉じる",
             variable=self.auto_close_var,
-            font=("Segoe UI", 10), fg=COLORS["text"], bg=COLORS["bg_card"],
-            selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_card"],
+            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
             activeforeground=COLORS["accent"],
-        ).pack(anchor="w")
+            command=self._save_app_config
+        ).pack(anchor="w", pady=2)
 
         # 閉じるボタン
         close_btn = tk.Button(
@@ -918,6 +932,24 @@ class QuickCompressorApp:
         x = self.root.winfo_x() + 50
         y = self.root.winfo_y() + 50
         win.geometry(f"+{x}+{y}")
+
+    def _save_app_config(self):
+        config_path = os.path.join(register_menu.DATA_DIR, "config.json")
+        config = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            except Exception:
+                pass
+        config["auto_close"] = self.auto_close_var.get()
+        
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
 
     # ─────────────────────────────────────────
     # イベントハンドラ
