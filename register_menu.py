@@ -24,7 +24,7 @@ def get_app_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 def get_data_dir():
-    """設定ファイルの保存先 (%APPDATA%\QuickCompressor)"""
+    r"""設定ファイルの保存先 (%APPDATA%\QuickCompressor)"""
     appdata = os.environ.get('APPDATA')
     if not appdata:
         appdata = os.path.expanduser('~')

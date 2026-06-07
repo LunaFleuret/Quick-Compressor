@@ -1138,13 +1138,39 @@ class QuickCompressorApp:
                     ])
                 
         if not is_target_size_mode:
-            if encoder in ("h264_nvenc", "hevc_nvenc"):
-                cmd.extend(["-rc", "constqp", "-qp", str(cq)])
-            elif encoder == "av1_nvenc":
-                cmd.extend(["-cq", str(cq)])
-            elif is_amf:
-                # AMD AMF の固定画質設定 (CQモード)
-                cmd.extend(["-rc", "cqp", "-qp_p", str(cq), "-qp_i", str(cq)])
+            orig_total_bitrate = self.video_info.get("bitrate", 0)
+            orig_video_kbps = 0
+            if orig_total_bitrate > 0:
+                audio_kbps = 128 if (self.audio_var.get() and self.video_info.get("has_audio")) else 0
+                orig_video_kbps = max(100, int(orig_total_bitrate / 1000) - audio_kbps)
+            
+            if orig_video_kbps > 0:
+                # スマートCQモード: 元のビットレートを上限としてロック
+                if encoder in ("h264_nvenc", "hevc_nvenc", "av1_nvenc"):
+                    cmd.extend([
+                        "-rc", "vbr",
+                        "-cq", str(cq),
+                        "-maxrate", f"{orig_video_kbps}k",
+                        "-bufsize", f"{orig_video_kbps * 2}k"
+                    ])
+                elif is_amf:
+                    # AMD AMF のVBR上限ロック付き画質設定
+                    cmd.extend([
+                        "-rc", "vbr_peak",
+                        "-qp_p", str(cq),
+                        "-qp_i", str(cq),
+                        "-maxrate", f"{orig_video_kbps}k",
+                        "-bufsize", f"{orig_video_kbps * 2}k"
+                    ])
+            else:
+                # 元のビットレートが取得できない場合の従来のフォールバック
+                if encoder in ("h264_nvenc", "hevc_nvenc"):
+                    cmd.extend(["-rc", "constqp", "-qp", str(cq)])
+                elif encoder == "av1_nvenc":
+                    cmd.extend(["-cq", str(cq)])
+                elif is_amf:
+                    # AMD AMF の固定画質設定 (CQモード)
+                    cmd.extend(["-rc", "cqp", "-qp_p", str(cq), "-qp_i", str(cq)])
 
         # NVENC プリセット（設定ダイアログから取得）
         preset_val = self.preset_var.get()
