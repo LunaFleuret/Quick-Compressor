@@ -22,13 +22,30 @@ if not exist "dist\bin" mkdir "dist\bin"
 copy default_presets.json "dist\"
 
 echo.
-echo =======================================
-echo ビルド完了！ (dist\QuickCompressor.exe)
+echo [3] FFmpeg バイナリの確認...
+if not exist "dist\bin\ffmpeg.exe" (
+    echo [警告] dist\bin\ffmpeg.exe が見つかりません。インストーラーにFFmpegが含まれません。
+) else (
+    echo OK: dist\bin\ffmpeg.exe
+)
+
 echo.
-echo 【次のステップ】
-echo 1. FFmpeg公式などからWindows版をダウンロードし、
-echo    ffmpeg.exe と ffprobe.exe を dist\bin フォルダに入れてください。
-echo 2. Inno Setup で build_installer.iss をコンパイルすると、
-echo    配布用の setup.exe が完成します！
-echo =======================================
+echo [4] Inno Setup によるインストーラーの作成...
+set ISCC="C:\Users\Raika\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
+if not exist %ISCC% set ISCC="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if not exist %ISCC% set ISCC="C:\Program Files\Inno Setup 6\ISCC.exe"
+
+if exist %ISCC% (
+    %ISCC% build_installer.iss
+    echo.
+    echo =======================================
+    echo ビルド大成功！ Output\QuickCompressor_Setup.exe が作成されました。
+    echo =======================================
+    echo Outputフォルダを開きます...
+    explorer Output
+) else (
+    echo [エラー] Inno Setup (ISCC.exe) が見つかりません。
+    echo インストーラーの作成をスキップしました。手動で build_installer.iss をコンパイルしてください。
+    echo =======================================
+)
 pause
