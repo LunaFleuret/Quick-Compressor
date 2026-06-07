@@ -17,6 +17,12 @@ from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 import register_menu
 
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    HAS_DND = True
+except ImportError:
+    HAS_DND = False
+
 # ─────────────────────────────────────────────
 # バージョン情報とリポジトリ設定
 # ─────────────────────────────────────────────
@@ -238,10 +244,15 @@ class QuickCompressorApp:
             pass
 
         # 動画情報を取得
-        self.video_info = get_video_info(input_path)
-        if "error" in self.video_info:
-            messagebox.showerror("エラー", f"動画の読み込みに失敗しました:\n{self.video_info['error']}")
-            sys.exit(1)
+        if self.input_path:
+            self.video_info = get_video_info(self.input_path)
+            if "error" in self.video_info:
+                messagebox.showerror("エラー", f"動画の読み込みに失敗しました:\n{self.video_info['error']}")
+                sys.exit(1)
+        else:
+            self.video_info = {
+                "width": 1920, "height": 1080, "fps": 60, "bitrate": 0, "duration": 0, "filesize": 0, "codec": "-", "has_audio": True
+            }
 
         # 詳細設定変数（デフォルト値）
         self.preset_var = tk.StringVar(value=preset)
@@ -307,6 +318,10 @@ class QuickCompressorApp:
         self.root.bind("<ButtonPress-1>", start_drag)
         self.root.bind("<B1-Motion>", dragging)
 
+        if HAS_DND:
+            self.root.drop_target_register(DND_FILES)
+            self.root.dnd_bind('<<Drop>>', self._on_drop)
+
         # アップデートチェック（非同期）
         threading.Thread(target=self._check_for_updates, daemon=True).start()
 
@@ -336,6 +351,19 @@ class QuickCompressorApp:
             font=("Segoe UI", 18, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(side="left")
 
+        # ピン留めボタン (Always on top)
+        self.is_topmost = False
+        self.pin_btn = tk.Button(
+            title_frame, text="📌 最前面",
+            font=("Segoe UI", 9), fg=COLORS["text_dim"],
+            bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
+            activeforeground=COLORS["accent"],
+            relief="flat", cursor="hand2", padx=8, pady=2,
+            highlightbackground=COLORS["border"], highlightthickness=1,
+            command=self._toggle_topmost,
+        )
+        self.pin_btn.pack(side="right", pady=(8, 0))
+
         # 設定ボタン
         settings_btn = tk.Button(
             title_frame, text="⚙ 設定",
@@ -346,7 +374,7 @@ class QuickCompressorApp:
             highlightbackground=COLORS["border"], highlightthickness=1,
             command=self._open_settings,
         )
-        settings_btn.pack(side="right", pady=(8, 0))
+        settings_btn.pack(side="right", pady=(8, 0), padx=(0, 8))
 
         # プリセット作成ボタン
         self.preset_btn = tk.Button(
@@ -393,23 +421,56 @@ class QuickCompressorApp:
 
     def _build_file_info_card(self, parent):
         """ファイル情報カードの構築"""
-        card = tk.Frame(parent, bg=COLORS["bg_card"], padx=16, pady=12,
+        self.card_frame = tk.Frame(parent, bg=COLORS["bg_card"], padx=16, pady=12,
                         highlightbackground=COLORS["border"], highlightthickness=1)
-        card.pack(fill="x", pady=(0, 4))
+        self.card_frame.pack(fill="x", pady=(0, 4))
+
+        if not self.input_path:
+            self._build_empty_file_info()
+        else:
+            self._build_populated_file_info()
+
+    def _build_empty_file_info(self):
+        for widget in self.card_frame.winfo_children():
+            widget.destroy()
+        btn = tk.Button(
+            self.card_frame, text="📁 動画ファイルを選択...",
+            font=("Segoe UI", 11, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
+            activebackground=COLORS["bg_input"], activeforeground=COLORS["accent_hover"],
+            relief="flat", cursor="hand2", pady=8,
+            command=self._select_file
+        )
+        btn.pack(fill="x")
+
+    def _build_populated_file_info(self):
+        for widget in self.card_frame.winfo_children():
+            widget.destroy()
 
         # ファイル名
         filename = Path(self.input_path).name
         if len(filename) > 55:
             filename = filename[:52] + "..."
+            
+        header_frame = tk.Frame(self.card_frame, bg=COLORS["bg_card"])
+        header_frame.pack(fill="x")
+            
         tk.Label(
-            card, text=f"📁 {filename}",
+            header_frame, text=f"📁 {filename}",
             font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"],
             anchor="w"
-        ).pack(fill="x")
+        ).pack(side="left")
+        
+        tk.Button(
+            header_frame, text="📁 ファイルを選択",
+            font=("Segoe UI", 9), fg=COLORS["accent"], bg=COLORS["bg_card"],
+            activebackground=COLORS["bg_input"], activeforeground=COLORS["accent_hover"],
+            relief="flat", cursor="hand2", padx=8, pady=0,
+            command=self._select_file
+        ).pack(side="right")
 
         # 詳細情報行
         info = self.video_info
-        detail_frame = tk.Frame(card, bg=COLORS["bg_card"])
+        detail_frame = tk.Frame(self.card_frame, bg=COLORS["bg_card"])
         detail_frame.pack(fill="x", pady=(6, 0))
 
         details = [
@@ -427,6 +488,54 @@ class QuickCompressorApp:
                          bg=COLORS["bg_card"], font=("Segoe UI", 9)).pack(side="left")
             tk.Label(detail_frame, text=detail, fg=COLORS["text_dim"],
                      bg=COLORS["bg_card"], font=("Segoe UI", 9)).pack(side="left")
+
+    def _toggle_topmost(self):
+        self.is_topmost = not self.is_topmost
+        self.root.attributes("-topmost", self.is_topmost)
+        if self.is_topmost:
+            self.pin_btn.configure(fg=COLORS["accent"], bg=COLORS["bg_input"], text="📍 固定中")
+        else:
+            self.pin_btn.configure(fg=COLORS["text_dim"], bg=COLORS["bg_card"], text="📌 最前面")
+
+    def _on_drop(self, event):
+        files = self.root.tk.splitlist(event.data)
+        if not files:
+            return
+        filepath = files[0]
+        
+        self.input_path = filepath
+        self.video_info = get_video_info(self.input_path)
+        if "error" in self.video_info:
+            messagebox.showerror("エラー", f"動画の読み込みに失敗しました:\n{self.video_info['error']}")
+            self.input_path = None
+            self._build_empty_file_info()
+            self._update_ui_state()
+            return
+            
+        self._build_populated_file_info()
+        self._update_ui_state()
+
+    def _select_file(self):
+        filepath = filedialog.askopenfilename(
+            title="変換する動画ファイルを選択",
+            filetypes=[
+                ("動画ファイル", "*.mp4 *.mkv *.mov *.avi *.webm *.wmv *.flv *.ts *.m2ts"),
+                ("すべてのファイル", "*.*"),
+            ],
+        )
+        if filepath:
+            self.input_path = filepath
+            # 動画情報を再取得
+            self.video_info = get_video_info(self.input_path)
+            if "error" in self.video_info:
+                messagebox.showerror("エラー", f"動画の読み込みに失敗しました:\n{self.video_info['error']}")
+                self.input_path = None
+                self._build_empty_file_info()
+                self._update_ui_state()
+                return
+                
+            self._build_populated_file_info()
+            self._update_ui_state()
 
     def _build_settings(self, parent):
         """設定エリアの構築"""
@@ -597,19 +706,19 @@ class QuickCompressorApp:
         audio_frame.pack(fill="x", pady=(0, 4))
 
         self.audio_var = tk.BooleanVar(value=not self._init_no_audio)
-        audio_check = tk.Checkbutton(
+        self.audio_check_btn = tk.Checkbutton(
             audio_frame, text="音声を含める",
             variable=self.audio_var,
             font=("Segoe UI", 10), fg=COLORS["text"], bg=COLORS["bg_dark"],
             selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
             activeforeground=COLORS["accent"],
         )
-        audio_check.pack(anchor="w")
+        self.audio_check_btn.pack(anchor="w")
 
         if not self.video_info.get("has_audio"):
-            audio_check.configure(state="disabled")
+            self.audio_check_btn.configure(state="disabled")
             self.audio_var.set(False)
-            audio_check.configure(text="音声を含める (元の動画に音声なし)")
+            self.audio_check_btn.configure(text="音声を含める (元の動画に音声なし)")
 
         # 初期状態のプレビュー反映
         self._on_resolution_change()
@@ -665,6 +774,22 @@ class QuickCompressorApp:
             command=self._open_output_folder,
         )
         # 初期状態では非表示
+
+        self._update_ui_state()
+
+    def _update_ui_state(self):
+        if not self.input_path:
+            self.convert_btn.configure(state="disabled", bg=COLORS["text_dim"])
+            self.resolution_preview_label.configure(text="-")
+        else:
+            self.convert_btn.configure(state="normal", bg=COLORS["accent"])
+            self._on_resolution_change()
+            if hasattr(self, 'audio_check_btn'):
+                if not self.video_info.get("has_audio"):
+                    self.audio_check_btn.configure(state="disabled", text="音声を含める (元の動画に音声なし)")
+                    self.audio_var.set(False)
+                else:
+                    self.audio_check_btn.configure(state="normal", text="音声を含める")
 
     # ─────────────────────────────────────────
     # 設定ダイアログ
@@ -776,6 +901,8 @@ class QuickCompressorApp:
     # イベントハンドラ
     # ─────────────────────────────────────────
     def _on_resolution_change(self, *args):
+        if not hasattr(self, 'video_info') or not self.input_path:
+            return
         res_val = self.resolution_var.get()
         orig_w = self.video_info["width"]
         orig_h = self.video_info["height"]
@@ -1243,6 +1370,9 @@ class QuickCompressorApp:
             messagebox.showerror("エラー", f"レジストリの更新に失敗しました:\n{e}")
 
     def _start_conversion(self):
+        if not self.input_path and not self.preset_mode:
+            return
+
         if self.preset_mode:
             self._save_preset()
             return
@@ -1449,27 +1579,19 @@ def main():
         sys.exit(0)
 
     if not args.input:
-        # 引数がない場合はファイル選択ダイアログを表示
-        temp_root = tk.Tk()
-        temp_root.withdraw()
-        filepath = filedialog.askopenfilename(
-            title="変換する動画ファイルを選択",
-            filetypes=[
-                ("動画ファイル", "*.mp4 *.mkv *.mov *.avi *.webm *.wmv *.flv *.ts *.m2ts"),
-                ("すべてのファイル", "*.*"),
-            ],
-        )
-        temp_root.destroy()
-        if not filepath:
-            sys.exit(0)
+        filepath = None
     else:
         filepath = args.input
 
-    if not os.path.isfile(filepath):
+    if filepath and not os.path.isfile(filepath):
         messagebox.showerror("エラー", f"ファイルが見つかりません:\n{filepath}")
         sys.exit(1)
 
-    root = tk.Tk()
+
+    if HAS_DND:
+        root = TkinterDnD.Tk()
+    else:
+        root = tk.Tk()
     app = QuickCompressorApp(
         root, filepath,
         auto_start=args.auto,
