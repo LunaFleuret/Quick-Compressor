@@ -4,6 +4,7 @@
 import sys
 import os
 import json
+import uuid
 import argparse
 import subprocess
 import threading
@@ -1584,7 +1585,7 @@ class QuickCompressorApp:
         if not hasattr(self, 'preset_apply_combo'):
             return
         _, presets = self._get_filtered_presets_data()
-        preset_names = ["選択してください..."] + sorted(presets.keys())
+        preset_names = ["選択してください..."] + sorted([p.get("name", "") for p in presets.values()])
         self.preset_apply_combo.configure(values=preset_names)
         
         # もし現在選択中の名前が消去された場合はリセット
@@ -1597,8 +1598,15 @@ class QuickCompressorApp:
             return
             
         _, presets = self._get_presets_data()
-        if name in presets:
-            p = presets[name]
+        
+        selected_p = None
+        for p in presets.values():
+            if p.get("name") == name:
+                selected_p = p
+                break
+                
+        if selected_p:
+            p = selected_p
             
             if "codec" in p: self.codec_var.set(p["codec"])
             if "preset" in p: self.preset_var.set(p["preset"])
@@ -1650,7 +1658,44 @@ class QuickCompressorApp:
         if os.path.exists(presets_path):
             try:
                 with open(presets_path, "r", encoding="utf-8") as f:
-                    user_presets = json.load(f)
+                    data = json.load(f)
+                    
+                needs_save = False
+                migrated_presets = {}
+                
+                old_default_names = [
+                    "Change to 30FPS (High)", "Change to 30FPS (Low)",
+                    "Discord Free (10MB)", "Discord Free (10MB) (No Audio)",
+                    "Discord Nitro Basic (50MB)", "Discord Nitro Basic (50MB) (No Audio)",
+                    "Steam Chat (30MB)", "Steam Chat (30MB) (No Audio)",
+                    "X Post (512MB)", "Half Size (50%)",
+                    "Discord用 (10MB)", "Discord用 (30MB)", "Discord用 (50MB)",
+                    "Steam用", "汎用 (フルHD高画質)", "汎用 (HD標準画質)"
+                ]
+                
+                for key, p in data.items():
+                    if len(key) == 36 and key.count('-') == 4:
+                        migrated_presets[key] = p
+                    else:
+                        needs_save = True
+                        if key in old_default_names:
+                            continue
+                        new_id = str(uuid.uuid4())
+                        p["name"] = key
+                        p["is_custom"] = True
+                        migrated_presets[new_id] = p
+                        
+                user_presets = migrated_presets
+                
+                if needs_save:
+                    try:
+                        import shutil
+                        shutil.copy2(presets_path, presets_path + ".bak")
+                        with open(presets_path, "w", encoding="utf-8") as f:
+                            json.dump(user_presets, f, ensure_ascii=False, indent=4)
+                    except Exception:
+                        pass
+                        
             except Exception:
                 pass
         return user_presets
@@ -1667,10 +1712,10 @@ class QuickCompressorApp:
         if hasattr(self, 'hide_no_audio_presets_var') and self.hide_no_audio_presets_var.get():
             default_presets = self._get_default_presets()
             filtered = {}
-            for name, p in presets.items():
-                if name in default_presets and p.get("no_audio"):
+            for uid, p in presets.items():
+                if uid in default_presets and p.get("no_audio"):
                     continue
-                filtered[name] = p
+                filtered[uid] = p
             return path, filtered
         return path, presets
 
@@ -1687,8 +1732,8 @@ class QuickCompressorApp:
     def _refresh_preset_list(self):
         self.preset_listbox.delete(0, tk.END)
         _, presets = self._get_filtered_presets_data()
-        for name in sorted(presets.keys()):
-            self.preset_listbox.insert(tk.END, name)
+        for p in sorted(presets.values(), key=lambda x: x.get("name", "")):
+            self.preset_listbox.insert(tk.END, p.get("name", ""))
 
     def _on_preset_select(self, event):
         selection = self.preset_listbox.curselection()
@@ -1708,18 +1753,29 @@ class QuickCompressorApp:
             return
             
         default_presets = self._get_default_presets()
-        if old_name in default_presets:
-            messagebox.showwarning("警告", "デフォルトのプリセットは名前を変更できません。")
-            return
+        for p in default_presets.values():
+            if p.get("name") == old_name:
+                messagebox.showwarning("警告", "デフォルトのプリセットは名前を変更できません。")
+                return
+            if p.get("name") == new_name:
+                messagebox.showwarning("警告", "その名前はデフォルトのプリセットですでに使われています。")
+                return
             
         path, presets = self._get_presets_data()
-        if new_name in presets:
-            messagebox.showwarning("警告", "その名前のプリセットは既に存在します。")
-            return
+        for p in presets.values():
+            if p.get("name") == new_name:
+                messagebox.showwarning("警告", "その名前のプリセットは既に存在します。")
+                return
             
         user_presets = self._get_user_presets()
-        if old_name in user_presets:
-            user_presets[new_name] = user_presets.pop(old_name)
+        target_id = None
+        for uid, p in user_presets.items():
+            if p.get("name") == old_name:
+                target_id = uid
+                break
+                
+        if target_id:
+            user_presets[target_id]["name"] = new_name
             if self._save_presets_data(path, user_presets):
                 self._refresh_preset_list()
                 self._update_apply_preset_list()
@@ -1734,15 +1790,23 @@ class QuickCompressorApp:
         name = self.preset_listbox.get(selection[0])
         
         default_presets = self._get_default_presets()
-        if name in default_presets:
-            messagebox.showwarning("警告", "デフォルトのプリセットは削除できません。")
-            return
+        for p in default_presets.values():
+            if p.get("name") == name:
+                messagebox.showwarning("警告", "デフォルトのプリセットは削除できません。")
+                return
             
         if messagebox.askyesno("確認", f"プリセット「{name}」を削除しますか？"):
             path, presets = self._get_presets_data()
             user_presets = self._get_user_presets()
-            if name in user_presets:
-                del user_presets[name]
+            
+            target_id = None
+            for uid, p in user_presets.items():
+                if p.get("name") == name:
+                    target_id = uid
+                    break
+                    
+            if target_id:
+                del user_presets[target_id]
                 if self._save_presets_data(path, user_presets):
                     self._refresh_preset_list()
                     self._update_apply_preset_list()
@@ -1756,14 +1820,23 @@ class QuickCompressorApp:
             return
         
         default_presets = self._get_default_presets()
-        if name in default_presets:
-            messagebox.showwarning("警告", "デフォルトのプリセットと同名で保存することはできません。別の名前を指定してください。")
-            return
+        for p in default_presets.values():
+            if p.get("name") == name:
+                messagebox.showwarning("エラー", "デフォルトのプリセットと同名で保存することはできません。別の名前を指定してください。")
+                return
             
-        presets_path = os.path.join(register_menu.DATA_DIR, "presets.json")
         user_presets = self._get_user_presets()
+        for p in user_presets.values():
+            if p.get("name") == name:
+                messagebox.showwarning("エラー", "その名前はすでに使われています。別の名前を指定してください。")
+                return
+                
+        presets_path = os.path.join(register_menu.DATA_DIR, "presets.json")
+        new_id = str(uuid.uuid4())
         
-        user_presets[name] = {
+        user_presets[new_id] = {
+            "name": name,
+            "is_custom": True,
             "codec": self.codec_var.get(),
             "preset": self.preset_var.get(),
             "fps": self.fps_var.get(),
@@ -1775,16 +1848,16 @@ class QuickCompressorApp:
         
         if self.mode_var.get() == "size":
             try:
-                user_presets[name]["target_size_mb"] = float(self.target_size_var.get())
+                user_presets[new_id]["target_size_mb"] = float(self.target_size_var.get())
             except ValueError:
-                user_presets[name]["target_size_mb"] = 10.0
+                user_presets[new_id]["target_size_mb"] = 10.0
         elif self.mode_var.get() == "percent":
             try:
-                user_presets[name]["target_percent"] = float(self.target_percent_var.get())
+                user_presets[new_id]["target_percent"] = float(self.target_percent_var.get())
             except ValueError:
-                user_presets[name]["target_percent"] = 50.0
+                user_presets[new_id]["target_percent"] = 50.0
         else:
-            user_presets[name]["cq"] = self.quality_var.get()
+            user_presets[new_id]["cq"] = self.quality_var.get()
         
         try:
             with open(presets_path, "w", encoding="utf-8") as f:

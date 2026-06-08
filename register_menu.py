@@ -106,6 +106,9 @@ def load_all_presets():
         try:
             with open(presets_path, "r", encoding="utf-8") as f:
                 presets = json.load(f)
+                for k, v in presets.items():
+                    if "name" not in v:
+                        v["name"] = k
                 all_presets.update(presets)
         except Exception:
             pass
@@ -122,10 +125,10 @@ def load_all_presets():
 
     if hide_no_audio:
         filtered_presets = {}
-        for name, p in all_presets.items():
-            if name in default_presets and p.get("no_audio"):
+        for uid, p in all_presets.items():
+            if uid in default_presets and p.get("no_audio"):
                 continue
-            filtered_presets[name] = p
+            filtered_presets[uid] = p
         return filtered_presets
 
     return all_presets
@@ -142,7 +145,9 @@ def register_context_menu():
     
     all_presets = load_all_presets()
     idx = 1
-    for name, cfg in sorted(all_presets.items()):
+    
+    sorted_presets = sorted(all_presets.values(), key=lambda p: p.get("name", ""))
+    for cfg in sorted_presets:
         cmd = f'{EXECUTABLE_CMD} "%1" --auto'
         if cfg.get("fps") and cfg.get("fps") != "元のまま":
             cmd += f' --fps {cfg.get("fps")}'
@@ -164,9 +169,10 @@ def register_context_menu():
         if cfg.get("auto_close"):
             cmd += ' --auto-close'
             
+        preset_name = cfg.get("name", f"Preset{idx}")
         presets.append({
             "id": f"Preset{idx:02d}",
-            "name": name,
+            "name": preset_name,
             "cmd": cmd
         })
         idx += 1

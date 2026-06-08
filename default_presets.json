@@ -1,5 +1,7 @@
 {
-    "Change to 30FPS (High)": {
+    "8b9fa54b-8727-434e-8399-b485a7e2fd86": {
+        "name": "→30FPS (High)",
+        "is_custom": false,
         "audio_mode": "copy",
         "auto_close": false,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
@@ -9,7 +11,9 @@
         "preset": "p4",
         "resolution": "元のまま"
     },
-    "Change to 30FPS (Low)": {
+    "15569140-ef3e-4a07-9259-c7c3b3f314c0": {
+        "name": "→30FPS (Low)",
+        "is_custom": false,
         "audio_mode": "copy",
         "auto_close": false,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
@@ -19,7 +23,9 @@
         "preset": "p4",
         "resolution": "元のまま"
     },
-    "Discord Free (10MB)": {
+    "c158acdb-a101-4b7f-8262-3b2170c36e99": {
+        "name": "Discord Free (10MB)",
+        "is_custom": false,
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "H.264 (NVIDIA NVENC)",
@@ -29,7 +35,9 @@
         "resolution": "720p",
         "target_size_mb": 9.5
     },
-    "Discord Free (10MB) (No Audio)": {
+    "46b24246-2168-4867-9f4c-a70efc2b0c37": {
+        "name": "Discord Free (10MB) (No Audio)",
+        "is_custom": false,
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "H.264 (NVIDIA NVENC)",
@@ -39,7 +47,9 @@
         "resolution": "720p",
         "target_size_mb": 9.5
     },
-    "Discord Nitro Basic (50MB)": {
+    "c2fcf4c9-0bb5-4d5d-9b6f-fbce6e11b2f5": {
+        "name": "Discord Nitro Basic (50MB)",
+        "is_custom": false,
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "H.264 (NVIDIA NVENC)",
@@ -49,7 +59,9 @@
         "resolution": "元のまま",
         "target_size_mb": 45.0
     },
-    "Discord Nitro Basic (50MB) (No Audio)": {
+    "5dcd6cd0-bb09-45e5-bf8c-8afe94eae101": {
+        "name": "Discord Nitro Basic (50MB) (No Audio)",
+        "is_custom": false,
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "H.264 (NVIDIA NVENC)",
@@ -59,7 +71,9 @@
         "resolution": "元のまま",
         "target_size_mb": 45.0
     },
-    "Steam Chat (30MB)": {
+    "9aea3093-1f98-48d8-a34b-e34840b921fd": {
+        "name": "Steam Chat (30MB)",
+        "is_custom": false,
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
@@ -69,7 +83,9 @@
         "resolution": "元のまま",
         "target_size_mb": 30.0
     },
-    "Steam Chat (30MB) (No Audio)": {
+    "9b2b2bae-a957-4c4b-bb8b-babac8c9c2e9": {
+        "name": "Steam Chat (30MB) (No Audio)",
+        "is_custom": false,
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
@@ -79,7 +95,9 @@
         "resolution": "元のまま",
         "target_size_mb": 30.0
     },
-    "X Post (512MB)": {
+    "f5e0f300-2cc2-404e-a8d2-325b44dad3ad": {
+        "name": "X Post (512MB)",
+        "is_custom": false,
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
@@ -89,7 +107,9 @@
         "resolution": "元のまま",
         "target_size_mb": 512.0
     },
-    "Half Size (50%)": {
+    "76598b90-d317-4071-bd88-fc0e1d29bd0d": {
+        "name": "Half Size (50%)",
+        "is_custom": false,
         "audio_mode": "reencode",
         "auto_close": false,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
