@@ -258,6 +258,7 @@ class QuickCompressorApp:
         config_path = os.path.join(register_menu.DATA_DIR, "config.json")
         saved_auto_close = auto_close
         saved_hide_no_audio = False
+        saved_keep_metadata = True
         if os.path.exists(config_path):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -268,6 +269,8 @@ class QuickCompressorApp:
                         preset = config["preset"]
                     if "hide_no_audio_presets" in config:
                         saved_hide_no_audio = bool(config["hide_no_audio_presets"])
+                    if "keep_metadata" in config:
+                        saved_keep_metadata = bool(config["keep_metadata"])
             except Exception:
                 pass
 
@@ -276,6 +279,7 @@ class QuickCompressorApp:
         self.audio_mode_var = tk.StringVar(value=audio_mode)
         self.auto_close_var = tk.BooleanVar(value=saved_auto_close)
         self.hide_no_audio_presets_var = tk.BooleanVar(value=saved_hide_no_audio)
+        self.keep_metadata_var = tk.BooleanVar(value=saved_keep_metadata)
 
         # UI用初期値保持
         self._init_fps = fps
@@ -1097,7 +1101,7 @@ class QuickCompressorApp:
             command=lambda: _on_audio_cb_click("reencode")
         ).pack(anchor="w", pady=2)
 
-        # --- 自動終了オプション ---
+        # --- 自動終了オプション / メタデータ引き継ぎ ---
         close_option_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
                                      highlightbackground=COLORS["border"], highlightthickness=1)
         close_option_card.pack(fill="x", pady=(0, 10))
@@ -1105,6 +1109,15 @@ class QuickCompressorApp:
         tk.Checkbutton(
             close_option_card, text="変換完了後に自動で閉じる",
             variable=self.auto_close_var,
+            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
+            activeforeground=COLORS["accent"],
+            command=self._save_app_config
+        ).pack(anchor="w", pady=2)
+
+        tk.Checkbutton(
+            close_option_card, text="元のメタデータ（撮影日時など）を引き継ぐ",
+            variable=self.keep_metadata_var,
             font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
             selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
             activeforeground=COLORS["accent"],
@@ -1139,6 +1152,7 @@ class QuickCompressorApp:
                 pass
         config["auto_close"] = self.auto_close_var.get()
         config["preset"] = self.preset_var.get()
+        config["keep_metadata"] = self.keep_metadata_var.get()
         if hasattr(self, 'hide_no_audio_presets_var'):
             config["hide_no_audio_presets"] = self.hide_no_audio_presets_var.get()
         
@@ -1407,8 +1421,8 @@ class QuickCompressorApp:
             cmd.append("-an")
 
         # オリジナルのメタデータ（内部撮影日時・GPS等）をすべて引き継ぐ
-        # ※将来的には設定でオンオフできるようにする予定だが、現在はデフォルトで有効
-        cmd.extend(["-map_metadata", "0"])
+        if self.keep_metadata_var.get():
+            cmd.extend(["-map_metadata", "0"])
 
         cmd.append(self.output_path)
         return cmd
@@ -1849,12 +1863,13 @@ class QuickCompressorApp:
                 self._update_progress(100)
                 
                 # 元のファイルの「更新日時」および「アクセス日時」を引き継ぐ
-                try:
-                    if os.path.exists(self.input_path) and os.path.exists(self.output_path):
-                        st = os.stat(self.input_path)
-                        os.utime(self.output_path, (st.st_atime, st.st_mtime))
-                except Exception:
-                    pass
+                if self.keep_metadata_var.get():
+                    try:
+                        if os.path.exists(self.input_path) and os.path.exists(self.output_path):
+                            st = os.stat(self.input_path)
+                            os.utime(self.output_path, (st.st_atime, st.st_mtime))
+                    except Exception:
+                        pass
                 
                 # 出力ファイルのサイズを取得
                 out_size = os.path.getsize(self.output_path) if os.path.exists(self.output_path) else 0
