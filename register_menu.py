@@ -165,7 +165,7 @@ def register_context_menu():
             cmd += ' --auto-close'
             
         presets.append({
-            "id": f"Preset{idx}",
+            "id": f"Preset{idx:02d}",
             "name": name,
             "cmd": cmd
         })
@@ -257,6 +257,10 @@ def unregister_context_menu():
             try:
                 winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset{i}\command")
                 winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset{i}")
+            except FileNotFoundError: pass
+            try:
+                winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset{i:02d}\command")
+                winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset{i:02d}")
             except FileNotFoundError: pass
         try:
             winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\GUI\command")
