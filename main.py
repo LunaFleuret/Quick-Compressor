@@ -1406,6 +1406,10 @@ class QuickCompressorApp:
         else:
             cmd.append("-an")
 
+        # オリジナルのメタデータ（内部撮影日時・GPS等）をすべて引き継ぐ
+        # ※将来的には設定でオンオフできるようにする予定だが、現在はデフォルトで有効
+        cmd.extend(["-map_metadata", "0"])
+
         cmd.append(self.output_path)
         return cmd
 
@@ -1843,6 +1847,15 @@ class QuickCompressorApp:
 
             if self.process.returncode == 0:
                 self._update_progress(100)
+                
+                # 元のファイルの「更新日時」および「アクセス日時」を引き継ぐ
+                try:
+                    if os.path.exists(self.input_path) and os.path.exists(self.output_path):
+                        st = os.stat(self.input_path)
+                        os.utime(self.output_path, (st.st_atime, st.st_mtime))
+                except Exception:
+                    pass
+                
                 # 出力ファイルのサイズを取得
                 out_size = os.path.getsize(self.output_path) if os.path.exists(self.output_path) else 0
                 compression = ""
