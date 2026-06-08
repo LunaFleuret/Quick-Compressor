@@ -67,6 +67,18 @@ REG_ROOT = winreg.HKEY_CURRENT_USER
 REG_ROOT_PATH = r"Software\Classes"
 
 
+def is_amd_gpu():
+    try:
+        import subprocess
+        output = subprocess.check_output(
+            ["wmic", "path", "win32_VideoController", "get", "name"], 
+            text=True, 
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        return "AMD" in output.upper() or "RADEON" in output.upper()
+    except:
+        return False
+
 def load_all_presets():
     presets_path = os.path.join(DATA_DIR, "presets.json")
     default_path = os.path.join(APP_DIR, "default_presets.json")
@@ -80,14 +92,7 @@ def load_all_presets():
             with open(default_path, "r", encoding="utf-8") as f:
                 content = f.read()
                 
-            # メインスクリプトを動的インポートしてGPUを判別
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("main_app", MAIN_SCRIPT)
-            main_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(main_module)
-            
-            default_codec = main_module.detect_gpu_and_default_codec()
-            if "AMD" in default_codec:
+            if is_amd_gpu():
                 content = content.replace("NVIDIA NVENC", "AMD AMF")
                 
             default_presets = json.loads(content)
@@ -127,6 +132,9 @@ def load_all_presets():
 
 def register_context_menu():
     """右クリックメニューに登録（HKCU - 管理者権限不要）"""
+    # メニューの重複を防ぐため、一度既存の登録をクリアする
+    unregister_context_menu()
+    
     # GUI起動用
     cmd_gui = f'{EXECUTABLE_CMD} "%1"'
     
