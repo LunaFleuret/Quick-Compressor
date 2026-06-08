@@ -1,6 +1,6 @@
 [Setup]
 AppName=Quick Compressor
-AppVersion=1.0
+AppVersion=2.0.0
 AppPublisher=Raika
 DefaultDirName={autopf}\Quick Compressor
 DefaultGroupName=Quick Compressor
