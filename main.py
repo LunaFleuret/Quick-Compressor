@@ -1303,10 +1303,17 @@ class QuickCompressorApp:
             if duration > 0:
                 is_target_size_mode = True
                 audio_kbps = 64 if (self.audio_var.get() and self.video_info.get("has_audio")) else 0
-                # AMD (AMF) はvbr_peakの特性上上振れしやすいためマージンを多めに取る (90%)
-                margin = 0.90 if is_amf else 0.95
+                # A案の対策: 50MB以下の目標サイズなど、シビアな場合はマージンを多めに取る
+                if target_size_mb <= 55.0:
+                    margin = 0.85 if is_amf else 0.90
+                else:
+                    margin = 0.90 if is_amf else 0.95
+                
                 target_total_kbps = (target_size_mb * margin * 8192) / duration
                 video_kbps = max(100, int(target_total_kbps - audio_kbps))
+                
+                # B案の対策: バッファサイズを等倍(1倍)にして、瞬間的なビットレート超過を許容しない
+                buf_multiplier = 1 if target_size_mb <= 55.0 else 2
                 
                 if is_amf:
                     # AMFエンコーダーはvbr_peakを使用
@@ -1314,14 +1321,14 @@ class QuickCompressorApp:
                         "-rc", "vbr_peak",
                         "-b:v", f"{video_kbps}k",
                         "-maxrate", f"{video_kbps}k",
-                        "-bufsize", f"{video_kbps * 2}k"
+                        "-bufsize", f"{video_kbps * buf_multiplier}k"
                     ])
                 else:
                     cmd.extend([
                         "-rc", "vbr",
                         "-b:v", f"{video_kbps}k",
                         "-maxrate", f"{video_kbps}k",
-                        "-bufsize", f"{video_kbps * 2}k"
+                        "-bufsize", f"{video_kbps * buf_multiplier}k"
                     ])
                 
         if not is_target_size_mode:

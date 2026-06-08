@@ -23,21 +23,21 @@
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "H.264 (NVIDIA NVENC)",
-        "fps": "24",
+        "fps": "30",
         "no_audio": false,
         "preset": "p7",
         "resolution": "720p",
-        "target_size_mb": 10.0
+        "target_size_mb": 9.5
     },
     "Discord Free (10MB) (No Audio)": {
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "H.264 (NVIDIA NVENC)",
-        "fps": "24",
+        "fps": "30",
         "no_audio": true,
         "preset": "p7",
         "resolution": "720p",
-        "target_size_mb": 10.0
+        "target_size_mb": 9.5
     },
     "Discord Nitro Basic (50MB)": {
         "audio_mode": "reencode",
@@ -63,7 +63,7 @@
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
-        "fps": "24",
+        "fps": "30",
         "no_audio": false,
         "preset": "p7",
         "resolution": "元のまま",
@@ -73,7 +73,7 @@
         "audio_mode": "reencode",
         "auto_close": true,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
-        "fps": "24",
+        "fps": "30",
         "no_audio": true,
         "preset": "p7",
         "resolution": "元のまま",
