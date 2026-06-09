@@ -25,3 +25,8 @@ Output/
 
 # Skill file for AI guidance
 .skill.md
+
+# Local testing & configuration
+presets.json
+run.bat
+scale_test.png
