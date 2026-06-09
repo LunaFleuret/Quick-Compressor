@@ -994,6 +994,25 @@ class QuickCompressorApp:
         win.transient(self.root)
         win.grab_set()
 
+        # ウィンドウのどこでもドラッグ移動できるように設定
+        def start_win_drag(event):
+            ignore_classes = ("Button", "TButton", "TCombobox", "TScale", "Radiobutton", "TRadiobutton", "Checkbutton", "TCheckbutton", "Entry", "TEntry")
+            if event.widget.winfo_class() in ignore_classes or getattr(event.widget, '_is_file_card', False):
+                win._drag_start_x = None
+                return
+            win._drag_start_x = event.x_root - win.winfo_x()
+            win._drag_start_y = event.y_root - win.winfo_y()
+
+        def win_dragging(event):
+            if getattr(win, '_drag_start_x', None) is None:
+                return
+            x = event.x_root - win._drag_start_x
+            y = event.y_root - win._drag_start_y
+            win.geometry(f"+{x}+{y}")
+
+        win.bind("<ButtonPress-1>", start_win_drag)
+        win.bind("<B1-Motion>", win_dragging)
+
         pad = tk.Frame(win, bg=COLORS["bg_dark"], padx=20, pady=16)
         pad.pack(fill="both", expand=True)
 
@@ -1012,37 +1031,75 @@ class QuickCompressorApp:
             font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
         ).pack(anchor="w")
 
-        tk.Label(
+        self.preset_desc_label = tk.Label(
             preset_card,
             text="速い → ファイルサイズ大  /  遅い → ファイルサイズ小",
-            font=("Segoe UI", 8), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
-        ).pack(anchor="w", pady=(0, 6))
+            font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
+        )
+        self.preset_desc_label.pack(anchor="w", pady=(0, 6))
 
-        preset_display_values = [f"{v}  {n}" for v, n in NVENC_PRESETS]
+        amd_note_label = tk.Label(
+            preset_card,
+            text="※注意点：AMDの場合、P1からP3までがSpeed、\nP4がbalance、P5からP7までがQuality設定となっています。",
+            font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
+            justify="left", anchor="w"
+        )
+        amd_note_label.pack(anchor="w", pady=(0, 6))
+
+        AMF_PRESETS = [
+            ("Speed", "高速（ファイルサイズ大）"),
+            ("Balanced", "標準（バランス）"),
+            ("Quality", "画質（ファイルサイズ小）")
+        ]
+
         self.preset_display_var = tk.StringVar()
+        preset_combo = ttk.Combobox(
+            preset_card, textvariable=self.preset_display_var,
+            state="readonly", font=("Segoe UI", 11), width=26
+        )
+        preset_combo.pack(anchor="w", pady=(2, 6))
         
         def _update_preset_display(*args):
+            is_amf = "amf" in self.codec_var.get().lower()
+            current_presets = AMF_PRESETS if is_amf else NVENC_PRESETS
+            preset_display_values = [f"{v}  {n}" for v, n in current_presets]
+            preset_combo['values'] = preset_display_values
+            
             current_val = self.preset_var.get()
-            current_display = next((f"{v}  {n}" for v, n in NVENC_PRESETS if v == current_val), f"p4  標準（バランス）")
+            
+            # AMFの場合でP1~P7が選ばれている場合、表示用に丸める
+            display_val = current_val
+            if is_amf and current_val.lower() in [f"p{i}" for i in range(1, 8)]:
+                if current_val.lower() in ("p1", "p2", "p3"): display_val = "Speed"
+                elif current_val.lower() in ("p5", "p6", "p7"): display_val = "Quality"
+                else: display_val = "Balanced"
+            # NVENCの場合でAMFのプリセットが選ばれている場合、表示用に丸める
+            elif not is_amf and current_val.lower() in ("speed", "balanced", "quality"):
+                if current_val.lower() == "speed": display_val = "p2"
+                elif current_val.lower() == "quality": display_val = "p6"
+                else: display_val = "p4"
+
+            if hasattr(self, 'preset_desc_label'):
+                if is_amf:
+                    self.preset_desc_label.config(text="Speed → ファイルサイズ大  /  Quality → ファイルサイズ小")
+                else:
+                    self.preset_desc_label.config(text="速い → ファイルサイズ大  /  遅い → ファイルサイズ小")
+                
+            current_display = next((f"{v}  {n}" for v, n in current_presets if v.lower() == display_val.lower()), preset_display_values[len(preset_display_values)//2])
             self.preset_display_var.set(current_display)
             
         _update_preset_display()
-        trace_id = self.preset_var.trace_add("write", _update_preset_display)
+        trace_preset_id = self.preset_var.trace_add("write", _update_preset_display)
+        trace_codec_id = self.codec_var.trace_add("write", _update_preset_display)
         
         def _on_destroy(event):
             if event.widget == win:
                 try:
-                    self.preset_var.trace_remove("write", trace_id)
+                    self.preset_var.trace_remove("write", trace_preset_id)
+                    self.codec_var.trace_remove("write", trace_codec_id)
                 except Exception:
                     pass
         win.bind("<Destroy>", _on_destroy, add="+")
-
-        preset_combo = ttk.Combobox(
-            preset_card, textvariable=self.preset_display_var,
-            values=preset_display_values, state="readonly",
-            font=("Segoe UI", 11), width=26
-        )
-        preset_combo.pack(anchor="w", pady=(2, 6))
         
         def _on_combo_select(event):
             selected = self.preset_display_var.get()
@@ -1372,13 +1429,15 @@ class QuickCompressorApp:
         preset_val = self.preset_var.get()
         if is_amf:
             amf_preset = "balanced"
-            if preset_val in ("p1", "p2", "p3"):
+            if preset_val.lower() in ("p1", "p2", "p3", "speed"):
                 amf_preset = "speed"
-            elif preset_val in ("p5", "p6", "p7"):
+            elif preset_val.lower() in ("p5", "p6", "p7", "quality"):
                 amf_preset = "quality"
+            elif preset_val.lower() in ("p4", "balanced"):
+                amf_preset = "balanced"
             cmd.extend(["-preset", amf_preset])
         else:
-            cmd.extend(["-preset", preset_val])
+            cmd.extend(["-preset", preset_val.lower()])
 
         # ビデオフィルター
         filters = []
