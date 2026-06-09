@@ -76,7 +76,7 @@ CODECS = {
 }
 
 FRAME_RATES = ["元のまま", "24", "30", "60"]
-RESOLUTIONS = ["元のまま", "1080p", "720p", "480p"]
+RESOLUTIONS = ["元のまま", "1440p", "1080p", "720p", "480p"]
 
 # CUVIDデコーダーマッピング（GPU読み込み最適化用）
 CUVID_DECODERS = {
@@ -397,15 +397,17 @@ class QuickCompressorApp:
     # UI構築
     # ─────────────────────────────────────────
     def _build_ui(self):
-        # メインコンテナ
-        main_frame = tk.Frame(self.root, bg=COLORS["bg_dark"], padx=24, pady=20)
-        main_frame.pack(fill="both", expand=True)
+        # メインコンテナ (枠線用に highlightthickness を設定)
+        self.main_frame = tk.Frame(self.root, bg=COLORS["bg_dark"], padx=24, pady=20,
+                                   highlightbackground=COLORS["bg_dark"], highlightthickness=8)
+        self.main_frame.pack(fill="both", expand=True)
+        main_frame = self.main_frame
 
         # --- プリセット作成モード バナー (初期は非表示) ---
-        self.preset_banner = tk.Frame(main_frame, bg=COLORS["success"], pady=8)
+        self.preset_banner = tk.Frame(main_frame, bg=COLORS["success"], pady=12)
         self.preset_banner_label = tk.Label(
             self.preset_banner, text="プリセット作成モード：現在の設定をプリセットとして保存できます",
-            font=("Segoe UI", 10, "bold"), fg=COLORS["text_bright"], bg=COLORS["success"]
+            font=("Segoe UI", 12, "bold"), fg=COLORS["text_bright"], bg=COLORS["success"]
         )
         self.preset_banner_label.pack()
 
@@ -1327,8 +1329,21 @@ class QuickCompressorApp:
                     audio_kbps = 64 if (has_audio_var and self.video_info.get("has_audio")) else 0
                     video_kbps = target_total_kbps - audio_kbps
                     
-                    if video_kbps < 1500 and new_h >= 1080:
-                        warning_text = "⚠️ 目標容量が小さいため、1080p以上では容量オーバーになる可能性が高いです。\n    720p以下を推奨します。"
+                    if new_h >= 2160:
+                        required_kbps = 6000
+                        rec_res = "1080pまたは720p"
+                    elif new_h >= 1440:
+                        required_kbps = 3000
+                        rec_res = "1080pまたは720p"
+                    elif new_h >= 1080:
+                        required_kbps = 1500
+                        rec_res = "720p以下"
+                    else:
+                        required_kbps = 0
+                        rec_res = ""
+                    
+                    if required_kbps > 0 and video_kbps < required_kbps:
+                        warning_text = f"⚠️ 目標容量が小さいため、現在の解像度では容量オーバーになる可能性が高いです。\n    {rec_res}への変更を推奨します。"
                         
         self.resolution_warning_label.configure(text=warning_text)
 
@@ -1585,10 +1600,12 @@ class QuickCompressorApp:
         self.preset_mode = not self.preset_mode
         if self.preset_mode:
             self.preset_banner.pack(fill="x", pady=(0, 16), before=self.title_frame)
+            self.main_frame.configure(highlightbackground=COLORS["success"])
             self.convert_btn.configure(
                 text="💾 現在の設定をプリセットとして保存",
                 bg=COLORS["success"],
                 activebackground="#157347",
+                state="normal"
             )
             self.preset_btn.configure(
                 text="✖ キャンセル",
@@ -1597,10 +1614,14 @@ class QuickCompressorApp:
             )
         else:
             self.preset_banner.pack_forget()
+            self.main_frame.configure(highlightbackground=COLORS["bg_dark"])
+            bg_color = COLORS["accent"] if self.input_path else COLORS["text_dim"]
+            btn_state = "normal" if self.input_path else "disabled"
             self.convert_btn.configure(
                 text="⚡ 圧縮開始",
-                bg=COLORS["accent"],
+                bg=bg_color,
                 activebackground=COLORS["accent_hover"],
+                state=btn_state
             )
             self.preset_btn.configure(
                 text="プリセット作成",
@@ -1958,7 +1979,7 @@ class QuickCompressorApp:
 
     def _save_preset(self):
         from tkinter import simpledialog
-        name = simpledialog.askstring("プリセット名", "プリセットの名前を入力してください\n（例: Discord用、Steam用）")
+        name = simpledialog.askstring("プリセット名", "プリセットの名前を入力してください\n（例: Discord用、Steam用）", parent=self.root)
         if not name:
             return
         
