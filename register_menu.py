@@ -141,6 +141,17 @@ def register_context_menu():
     # GUI起動用
     cmd_gui = f'{EXECUTABLE_CMD} "%1"'
     
+    config_path = os.path.join(DATA_DIR, "config.json")
+    force_auto_close = True
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                if "force_auto_close_on_right_click" in config:
+                    force_auto_close = bool(config["force_auto_close_on_right_click"])
+        except Exception:
+            pass
+            
     presets = []
     
     all_presets = load_all_presets()
@@ -166,7 +177,8 @@ def register_context_menu():
             cmd += f' --codec "{cfg.get("codec")}"'
         if cfg.get("no_audio"):
             cmd += ' --no-audio'
-        if cfg.get("auto_close"):
+        
+        if force_auto_close or cfg.get("auto_close"):
             cmd += ' --auto-close'
             
         preset_name = cfg.get("name", f"Preset{idx}")

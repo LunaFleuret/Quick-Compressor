@@ -261,6 +261,7 @@ class QuickCompressorApp:
         saved_auto_close = auto_close
         saved_hide_no_audio = False
         saved_keep_metadata = True
+        saved_force_auto_close_on_right_click = True
         if os.path.exists(config_path):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -273,6 +274,8 @@ class QuickCompressorApp:
                         saved_hide_no_audio = bool(config["hide_no_audio_presets"])
                     if "keep_metadata" in config:
                         saved_keep_metadata = bool(config["keep_metadata"])
+                    if "force_auto_close_on_right_click" in config:
+                        saved_force_auto_close_on_right_click = bool(config["force_auto_close_on_right_click"])
             except Exception:
                 pass
 
@@ -282,6 +285,7 @@ class QuickCompressorApp:
         self.auto_close_var = tk.BooleanVar(value=saved_auto_close)
         self.hide_no_audio_presets_var = tk.BooleanVar(value=saved_hide_no_audio)
         self.keep_metadata_var = tk.BooleanVar(value=saved_keep_metadata)
+        self.force_auto_close_on_right_click_var = tk.BooleanVar(value=saved_force_auto_close_on_right_click)
 
         # UI用初期値保持
         self._init_fps = fps
@@ -1175,6 +1179,15 @@ class QuickCompressorApp:
         ).pack(anchor="w", pady=2)
 
         tk.Checkbutton(
+            close_option_card, text="右クリックから起動時は強制的に自動で閉じる",
+            variable=self.force_auto_close_on_right_click_var,
+            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
+            activeforeground=COLORS["accent"],
+            command=self._save_app_config
+        ).pack(anchor="w", pady=2)
+
+        tk.Checkbutton(
             close_option_card, text="元のメタデータ（撮影日時など）を引き継ぐ",
             variable=self.keep_metadata_var,
             font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
@@ -1214,6 +1227,8 @@ class QuickCompressorApp:
         config["keep_metadata"] = self.keep_metadata_var.get()
         if hasattr(self, 'hide_no_audio_presets_var'):
             config["hide_no_audio_presets"] = self.hide_no_audio_presets_var.get()
+        if hasattr(self, 'force_auto_close_on_right_click_var'):
+            config["force_auto_close_on_right_click"] = self.force_auto_close_on_right_click_var.get()
         
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
         try:
