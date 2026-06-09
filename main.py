@@ -258,7 +258,7 @@ class QuickCompressorApp:
 
         # 設定ファイルから設定を読み込む
         config_path = os.path.join(register_menu.DATA_DIR, "config.json")
-        saved_auto_close = auto_close
+        saved_auto_close = False
         saved_hide_no_audio = False
         saved_keep_metadata = True
         saved_force_auto_close_on_right_click = True
@@ -278,6 +278,10 @@ class QuickCompressorApp:
                         saved_force_auto_close_on_right_click = bool(config["force_auto_close_on_right_click"])
             except Exception:
                 pass
+
+        # コマンドライン引数(--auto-close)が指定されていれば、そちらを優先する
+        if auto_close:
+            saved_auto_close = True
 
         # 詳細設定変数
         self.preset_var = tk.StringVar(value=preset)
@@ -349,7 +353,14 @@ class QuickCompressorApp:
         except Exception:
             pass
 
+        # 横幅を固定し、縦幅のみ自動調整を許可（プリセットメニュー展開時にボタンが見えなくなるのを防ぐため）
+        self.root.minsize(w, h)
+        self.root.maxsize(w, 9999)
         self.root.geometry(f"+{x}+{y}")
+        
+        # 警告ラベルなどのテキストが横幅を押し広げないように、現在の横幅に合わせて自動改行（wraplength）を設定
+        if hasattr(self, 'resolution_warning_label'):
+            self.resolution_warning_label.configure(wraplength=w - 60)
 
         # ウィンドウのどこでもドラッグ移動できるように設定
         self._enable_window_drag()
@@ -739,6 +750,14 @@ class QuickCompressorApp:
         )
         self.resolution_preview_label.pack(anchor="w")
 
+        self.resolution_warning_label = tk.Label(
+            resolution_frame,
+            text="",
+            font=("Segoe UI", 12, "bold"), fg=COLORS["error"], bg=COLORS["bg_dark"],
+            justify="left"
+        )
+        self.resolution_warning_label.pack(anchor="w", pady=(2, 0))
+
         # --- 画質 (CQP) / 容量指定 ---
         quality_frame = tk.Frame(settings_frame, bg=COLORS["bg_dark"])
         quality_frame.pack(fill="x", pady=(0, 12))
@@ -828,6 +847,7 @@ class QuickCompressorApp:
         size_input_frame.pack(anchor="w", pady=(4, 0))
         
         self.target_size_var = tk.StringVar(value=str(self._target_size_mb) if self._target_size_mb else "10")
+        self.target_size_var.trace_add("write", lambda *a: self._check_resolution_warning())
         self.size_combo = ttk.Combobox(
             size_input_frame, textvariable=self.target_size_var,
             values=["8", "10", "25", "30", "50", "100"],
@@ -859,6 +879,7 @@ class QuickCompressorApp:
         percent_input_frame.pack(anchor="w", pady=(4, 0))
         
         self.target_percent_var = tk.StringVar(value="50")
+        self.target_percent_var.trace_add("write", lambda *a: self._check_resolution_warning())
         self.percent_combo = ttk.Combobox(
             percent_input_frame, textvariable=self.target_percent_var,
             values=["25", "30", "50", "75", "80"],
@@ -1110,6 +1131,8 @@ class QuickCompressorApp:
             val = selected.split("  ")[0]
             self.preset_var.set(val)
             self._save_app_config()
+            preset_combo.selection_clear()
+            win.focus_set()
             
         preset_combo.bind("<<ComboboxSelected>>", _on_combo_select)
 
@@ -1265,8 +1288,50 @@ class QuickCompressorApp:
         self.resolution_preview_label.configure(
             text=f"{orig_w}×{orig_h} → {new_w}×{new_h}"
         )
+        self._check_resolution_warning(new_h)
 
-    def _on_mode_change(self):
+    def _check_resolution_warning(self, new_h=None):
+        if not hasattr(self, 'resolution_warning_label') or not hasattr(self, 'video_info'):
+            return
+            
+        if new_h is None:
+            res_val = self.resolution_var.get()
+            if res_val == "元のまま":
+                new_h = self.video_info.get("height", 1080)
+            else:
+                new_h = int(res_val.replace("p", ""))
+
+        warning_text = ""
+        mode = self.mode_var.get()
+        if mode in ("size", "percent"):
+            target_size_mb = None
+            if mode == "size":
+                try:
+                    target_size_mb = float(self.target_size_var.get())
+                except ValueError:
+                    pass
+            elif mode == "percent":
+                try:
+                    percent = float(self.target_percent_var.get())
+                    orig_bytes = self.video_info.get("filesize", 0)
+                    if orig_bytes > 0:
+                        target_size_mb = (orig_bytes / 1048576.0) * (percent / 100.0)
+                except ValueError:
+                    pass
+                    
+            if target_size_mb is not None and target_size_mb > 0:
+                duration = self.video_info.get("duration", 0)
+                if duration > 0:
+                    target_total_kbps = (target_size_mb * 0.90 * 8192) / duration
+                    audio_kbps = 64 if (self.audio_var.get() and self.video_info.get("has_audio")) else 0
+                    video_kbps = target_total_kbps - audio_kbps
+                    
+                    if video_kbps < 1500 and new_h >= 1080:
+                        warning_text = "⚠️ 目標容量が小さいため、1080p以上では容量オーバーになる可能性が高いです。\n    720p以下を推奨します。"
+                        
+        self.resolution_warning_label.configure(text=warning_text)
+
+    def _on_mode_change(self, *args):
         mode = self.mode_var.get()
         if mode == "cq":
             self.size_frame.pack_forget()
@@ -1282,6 +1347,8 @@ class QuickCompressorApp:
             self.cq_frame.pack_forget()
             self.size_frame.pack_forget()
             self.percent_frame.pack(fill="x")
+            
+        self._check_resolution_warning()
 
     def _on_quality_change(self, value):
         cq = int(float(value))
@@ -1956,6 +2023,10 @@ class QuickCompressorApp:
         if self.preset_mode:
             self._save_preset()
             return
+            
+        if hasattr(self, 'resolution_warning_label') and self.resolution_warning_label.cget("text"):
+            if not messagebox.askyesno("確認", "⚠️ 警告：目標容量に対して解像度が高すぎるため、容量オーバーになる可能性が高いです。\n\n本当にこのまま変換を開始しますか？\n（確実に収めたい場合は「いいえ」を押して解像度を下げてください）"):
+                return
 
         if self.is_converting:
             return
