@@ -1323,7 +1323,8 @@ class QuickCompressorApp:
                 duration = self.video_info.get("duration", 0)
                 if duration > 0:
                     target_total_kbps = (target_size_mb * 0.90 * 8192) / duration
-                    audio_kbps = 64 if (self.audio_var.get() and self.video_info.get("has_audio")) else 0
+                    has_audio_var = hasattr(self, 'audio_var') and self.audio_var.get()
+                    audio_kbps = 64 if (has_audio_var and self.video_info.get("has_audio")) else 0
                     video_kbps = target_total_kbps - audio_kbps
                     
                     if video_kbps < 1500 and new_h >= 1080:
