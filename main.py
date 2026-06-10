@@ -218,7 +218,7 @@ class QuickCompressorApp:
                  preset: str = "p4",
                  fps: str = "元のまま",
                  resolution: str = "元のまま",
-                 cq: int = 24,
+                 cq: int = 25,
                  audio_mode: str = "copy",
                  no_audio: bool = False,
                  target_size_mb: float = None,
@@ -815,7 +815,7 @@ class QuickCompressorApp:
                  ).pack(side="left")
 
         self.quality_value_label = tk.Label(
-            quality_label_frame, text="CQ 24 (高画質)",
+            quality_label_frame, text="CQ 25 (高画質)",
             font=("Segoe UI", 12, "bold"), fg=COLORS["success"], bg=COLORS["bg_dark"]
         )
         self.quality_value_label.pack(side="right")
@@ -1757,8 +1757,48 @@ class QuickCompressorApp:
             self.apply_preset_var.set("選択してください...")
 
     def _on_preset_apply_select(self, event):
+        self.preset_apply_combo.selection_clear()
+        self.root.focus_set()
+        
         name = self.apply_preset_var.get()
         if name == "選択してください...":
+            # デフォルト状態に戻す
+            config_preset = "p4"
+            config_path = os.path.join(register_menu.DATA_DIR, "config.json")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        config = json.load(f)
+                        if "preset" in config:
+                            config_preset = config["preset"]
+                except Exception:
+                    pass
+                    
+            if hasattr(self, '_init_codec'):
+                self.codec_var.set(self._init_codec)
+            self.preset_var.set(config_preset)
+            if hasattr(self, '_init_fps'):
+                self.fps_var.set(self._init_fps)
+            if hasattr(self, '_init_resolution'):
+                self.resolution_var.set(self._init_resolution)
+            
+            self.audio_mode_var.set("copy")
+            if hasattr(self, '_init_no_audio'):
+                self.audio_var.set(not self._init_no_audio)
+            
+            if hasattr(self, '_target_size_mb') and self._target_size_mb:
+                self.mode_var.set("size")
+                self.target_size_var.set(str(self._target_size_mb))
+            else:
+                self.mode_var.set("cq")
+                if hasattr(self, '_init_cq'):
+                    self.quality_var.set(self._init_cq)
+                    self._on_quality_change(self._init_cq)
+                
+            self._on_mode_change()
+            self._on_resolution_change()
+            if hasattr(self, '_update_ui_state'):
+                self._update_ui_state()
             return
             
         _, presets = self._get_presets_data()
@@ -1795,9 +1835,6 @@ class QuickCompressorApp:
                 
             self._on_mode_change()
             self._on_resolution_change()
-            
-            self.preset_apply_combo.selection_clear()
-            self.root.focus_set()
 
     def _get_default_presets(self):
         default_path = os.path.join(register_menu.APP_DIR, "default_presets.json")
@@ -2263,7 +2300,7 @@ def main():
     parser.add_argument("--preset", default="p4", help="エンコードプリセット")
     parser.add_argument("--fps", default="元のまま", help="フレームレート")
     parser.add_argument("--resolution", default="元のまま", help="解像度 (1080p, 720p, etc.)")
-    parser.add_argument("--cq", type=int, default=24, help="画質(CQ値)")
+    parser.add_argument("--cq", type=int, default=25, help="画質(CQ値)")
     parser.add_argument("--audio-mode", choices=["copy", "reencode"], default="copy", help="音声処理モード")
     parser.add_argument("--no-audio", action="store_true", help="音声を含めない")
     parser.add_argument("--auto", action="store_true", help="自動変換開始")
