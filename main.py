@@ -1468,6 +1468,10 @@ class QuickCompressorApp:
 
         # ビデオ設定
         cmd.extend(["-c:v", encoder])
+        cmd.extend(["-pix_fmt", "yuv420p"])  # 高い再生互換性のためのピクセルフォーマット指定
+        
+        if "hevc" in encoder:
+            cmd.extend(["-tag:v", "hvc1"])   # iPhone/Appleデバイス互換性のためのタグ
 
         # CQP (品質) または VBR (容量指定)
         cq = self.quality_var.get()
@@ -1623,6 +1627,8 @@ class QuickCompressorApp:
         # オリジナルのメタデータ（内部撮影日時・GPS等）をすべて引き継ぐ
         if self.keep_metadata_var.get():
             cmd.extend(["-map_metadata", "0"])
+
+        cmd.extend(["-movflags", "+faststart"])  # プレビュー/ストリーミング最適化
 
         cmd.append(self.output_path)
         return cmd
