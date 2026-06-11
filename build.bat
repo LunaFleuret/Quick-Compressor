@@ -4,7 +4,7 @@ echo =======================================
 echo Quick Compressor ビルドスクリプト
 echo =======================================
 
-where pyinstaller >nul 2>nul
+python -m PyInstaller --version >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo [エラー] PyInstallerが見つかりません。
     echo pip install pyinstaller を実行してインストールしてください。
@@ -14,7 +14,7 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo [1] PyInstallerによる実行ファイルの作成を開始します...
-pyinstaller --noconsole --onefile --name "QuickCompressor" main.py
+python -m PyInstaller --noconsole --onefile --name "QuickCompressor" main.py
 
 echo.
 echo [2] 配布用フォルダの準備...
