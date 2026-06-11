@@ -1889,8 +1889,7 @@ class QuickCompressorApp:
                 with open(default_path, "r", encoding="utf-8") as f:
                     content = f.read()
                 
-                default_codec = detect_gpu_and_default_codec()
-                if "AMD" in default_codec:
+                if register_menu.is_amd_gpu():
                     content = content.replace("NVIDIA NVENC", "AMD AMF")
                     
                 default_presets = json.loads(content)
