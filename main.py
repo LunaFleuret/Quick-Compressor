@@ -164,15 +164,37 @@ def get_video_info(filepath: str) -> dict:
     duration = float(data.get("format", {}).get("duration", 0) or 0)
     filesize = int(data.get("format", {}).get("size", 0) or 0)
 
+    width = int(video_stream.get("width", 0))
+    height = int(video_stream.get("height", 0))
+
+    # 回転情報の取得
+    rotation = 0
+    tags = video_stream.get("tags", {})
+    if "rotate" in tags:
+        try:
+            rotation = int(float(tags["rotate"]))
+        except ValueError:
+            pass
+    for side_data in video_stream.get("side_data_list", []):
+        if "rotation" in side_data:
+            try:
+                rotation = int(float(side_data["rotation"]))
+            except ValueError:
+                pass
+                
+    if abs(rotation) in (90, 270):
+        width, height = height, width
+
     info = {
-        "width": int(video_stream.get("width", 0)),
-        "height": int(video_stream.get("height", 0)),
+        "width": width,
+        "height": height,
         "fps": fps,
         "bitrate": bitrate,
         "duration": duration,
         "filesize": filesize,
         "codec": video_stream.get("codec_name", "不明"),
         "has_audio": audio_stream is not None,
+        "rotation": rotation,
     }
     return info
 
@@ -525,23 +547,30 @@ class QuickCompressorApp:
                 bind_click(child)
 
         # ファイル名
-        filename = Path(self.input_path).name
-        if len(filename) > 55:
-            filename = filename[:52] + "..."
+        file_path = Path(self.input_path)
+        filename = file_path.name
+        MAX_LEN = 22
+        if len(filename) > MAX_LEN:
+            ext = file_path.suffix
+            stem_len = MAX_LEN - len(ext) - 3
+            if stem_len > 0:
+                filename = file_path.stem[:stem_len] + "..." + ext
+            else:
+                filename = filename[:MAX_LEN-3] + "..."
             
         header_frame = tk.Frame(self.card_frame, bg=COLORS["bg_card"])
         header_frame.pack(fill="x")
             
         tk.Label(
-            header_frame, text=f"📁 {filename}",
-            font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"],
-            anchor="w"
-        ).pack(side="left")
-        
-        tk.Label(
             header_frame, text="※クリック または ドロップで変更",
             font=("Segoe UI", 9, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
         ).pack(side="right")
+        
+        tk.Label(
+            header_frame, text=f"📁 {filename}",
+            font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"],
+            anchor="w"
+        ).pack(side="left", fill="x", expand=True)
 
         # 詳細情報行
         info = self.video_info
@@ -1423,9 +1452,14 @@ class QuickCompressorApp:
             input_codec = self.video_info.get("codec", "")
             cuvid_decoder = CUVID_DECODERS.get(input_codec)
             use_gpu_decode = cuvid_decoder is not None
+            has_rotation = self.video_info.get("rotation", 0) != 0
             if use_gpu_decode:
-                cmd.extend(["-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
-                           "-c:v", cuvid_decoder])
+                if has_rotation:
+                    cmd.extend(["-hwaccel", "cuda", "-c:v", cuvid_decoder])
+                    use_gpu_decode = False  # 回転がある場合、自動回転を効かせるためCPUメモリに落とす
+                else:
+                    cmd.extend(["-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
+                               "-c:v", cuvid_decoder])
             else:
                 cmd.extend(["-hwaccel", "cuda"])
         
@@ -2101,7 +2135,7 @@ class QuickCompressorApp:
         if self.is_converting and self.process:
             self.is_cancelled = True
             self.process.terminate()
-            self._update_status("❌ 変換が中止されました")
+            self._update_status("❌ 変換が中止されました", color=COLORS["error"])
             self.cancel_btn.pack_forget()
 
     def _run_ffmpeg(self):
@@ -2158,18 +2192,25 @@ class QuickCompressorApp:
                 
                 # 出力ファイルのサイズを取得
                 out_size = os.path.getsize(self.output_path) if os.path.exists(self.output_path) else 0
-                compression = ""
-                if self.video_info["filesize"] > 0 and out_size > 0:
-                    ratio = out_size / self.video_info["filesize"] * 100
-                    compression = f"  ({ratio:.1f}% / 元サイズ)"
+                orig_size = self.video_info.get("filesize", 0)
+                
+                if orig_size > 0 and out_size > 0:
+                    ratio = out_size / orig_size * 100
+                    status_text = f"✅ 変換完了！  {format_filesize(orig_size)} → {format_filesize(out_size)}  ({ratio:.1f}% / 元サイズ)"
+                else:
+                    status_text = f"✅ 変換完了！  {format_filesize(out_size)}"
+                    
                 self._update_status(
-                    f"✅ 変換完了！  {format_filesize(out_size)}{compression}"
+                    status_text,
+                    color=COLORS["accent"],
+                    font_size=11,
+                    is_bold=True
                 )
                 self._show_success()
             elif getattr(self, "is_cancelled", False):
                 # 中止された場合はエラーダイアログを出さずに完了処理へ
                 self._update_progress(0)
-                self._update_status("❌ 変換が中止されました")
+                self._update_status("❌ 変換が中止されました", color=COLORS["error"])
                 if hasattr(self, "output_path") and os.path.exists(self.output_path):
                     try:
                         os.remove(self.output_path)
@@ -2177,11 +2218,11 @@ class QuickCompressorApp:
                         pass
             else:
                 stderr_out = self.process.stderr.read() if self.process.stderr else ""
-                self._update_status(f"❌ 変換失敗 (コード: {self.process.returncode})")
+                self._update_status(f"❌ 変換失敗 (コード: {self.process.returncode})", color=COLORS["error"])
                 self._show_error(f"FFmpegがエラーで終了しました。\n\n終了コード: {self.process.returncode}")
 
         except Exception as e:
-            self._update_status(f"❌ エラー: {str(e)}")
+            self._update_status(f"❌ エラー: {str(e)}", color=COLORS["error"])
             self._show_error(str(e))
 
         finally:
@@ -2196,8 +2237,10 @@ class QuickCompressorApp:
     def _update_progress(self, value):
         self.root.after(0, lambda: self.progress_var.set(value))
 
-    def _update_status(self, text):
-        self.root.after(0, lambda: self.status_label.configure(text=text))
+    def _update_status(self, text, color=None, font_size=9, is_bold=False):
+        fg_color = color if color else COLORS["text_dim"]
+        font_weight = "bold" if is_bold else "normal"
+        self.root.after(0, lambda: self.status_label.configure(text=text, fg=fg_color, font=("Segoe UI", font_size, font_weight)))
 
     def _show_success(self):
         def _update():
