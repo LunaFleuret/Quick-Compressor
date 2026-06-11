@@ -25,6 +25,76 @@ except ImportError:
     HAS_DND = False
 
 # ─────────────────────────────────────────────
+# タスクバー進捗表示用 (Windows API)
+# ─────────────────────────────────────────────
+import ctypes
+from ctypes import wintypes
+
+TBPF_NOPROGRESS = 0
+TBPF_INDETERMINATE = 1  # 準備 (緑のアニメーション)
+TBPF_NORMAL = 2         # 通常 (システム設定色, デフォルトで緑または青)
+TBPF_ERROR = 4          # エラー (赤)
+TBPF_PAUSED = 8         # 一時停止 (黄)
+
+try:
+    import comtypes.client
+    from comtypes import GUID, IUnknown, COMMETHOD, HRESULT
+    from ctypes.wintypes import HWND, DWORD
+    
+    class ITaskbarList3(IUnknown):
+        _iid_ = GUID('{EA1AFB91-9E28-4B86-90E9-9E9F8A5EEFAF}')
+        _methods_ = [
+            COMMETHOD([], HRESULT, 'HrInit'),
+            COMMETHOD([], HRESULT, 'AddTab', (['in'], HWND, 'hwnd')),
+            COMMETHOD([], HRESULT, 'DeleteTab', (['in'], HWND, 'hwnd')),
+            COMMETHOD([], HRESULT, 'ActivateTab', (['in'], HWND, 'hwnd')),
+            COMMETHOD([], HRESULT, 'SetActiveAlt', (['in'], HWND, 'hwnd')),
+            COMMETHOD([], HRESULT, 'MarkFullscreenWindow', (['in'], HWND, 'hwnd'), (['in'], ctypes.c_int, 'fFullscreen')),
+            COMMETHOD([], HRESULT, 'SetProgressValue', (['in'], HWND, 'hwnd'), (['in'], ctypes.c_uint64, 'ullCompleted'), (['in'], ctypes.c_uint64, 'ullTotal')),
+            COMMETHOD([], HRESULT, 'SetProgressState', (['in'], HWND, 'hwnd'), (['in'], DWORD, 'tbpFlags')),
+        ]
+    CLSID_TaskbarList = GUID('{56FDF344-FD6D-11D0-958A-006097C9A090}')
+    
+    has_taskbar_api = True
+except ImportError:
+    has_taskbar_api = False
+
+class TaskbarProgress:
+    def __init__(self, tk_root):
+        self.root = tk_root
+        self.hwnd = None
+        self.taskbar = None
+        if has_taskbar_api:
+            try:
+                tk_root.update_idletasks()
+                self.hwnd = int(tk_root.wm_frame(), 16)
+                self.taskbar = comtypes.client.CreateObject(CLSID_TaskbarList, interface=ITaskbarList3)
+                self.taskbar.HrInit()
+            except Exception as e:
+                print(f"Taskbar API init error: {e}")
+                self.taskbar = None
+
+    def set_state(self, state):
+        def _do():
+            if self.taskbar and self.hwnd:
+                try:
+                    self.taskbar.SetProgressState(self.hwnd, state)
+                except Exception:
+                    pass
+        if hasattr(self, 'root') and self.root:
+            self.root.after(0, _do)
+
+    def set_value(self, current, total):
+        def _do():
+            if self.taskbar and self.hwnd:
+                try:
+                    self.taskbar.SetProgressValue(self.hwnd, int(current), int(total))
+                except Exception:
+                    pass
+        if hasattr(self, 'root') and self.root:
+            self.root.after(0, _do)
+
+# ─────────────────────────────────────────────
 # バージョン情報とリポジトリ設定
 # ─────────────────────────────────────────────
 # バージョン情報（アプリのタイトルやアップデートチェックに使用）
@@ -273,7 +343,8 @@ class QuickCompressorApp:
         saved_auto_close = False
         saved_hide_no_audio = False
         saved_keep_metadata = True
-        saved_force_auto_close_on_right_click = True
+        saved_force_auto_close_on_right_click = False
+        saved_minimize_on_right_click = False
         if os.path.exists(config_path):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -288,6 +359,8 @@ class QuickCompressorApp:
                         saved_keep_metadata = bool(config["keep_metadata"])
                     if "force_auto_close_on_right_click" in config:
                         saved_force_auto_close_on_right_click = bool(config["force_auto_close_on_right_click"])
+                    if "minimize_on_right_click" in config:
+                        saved_minimize_on_right_click = bool(config["minimize_on_right_click"])
             except Exception:
                 pass
 
@@ -302,6 +375,7 @@ class QuickCompressorApp:
         self.hide_no_audio_presets_var = tk.BooleanVar(value=saved_hide_no_audio)
         self.keep_metadata_var = tk.BooleanVar(value=saved_keep_metadata)
         self.force_auto_close_on_right_click_var = tk.BooleanVar(value=saved_force_auto_close_on_right_click)
+        self.minimize_on_right_click_var = tk.BooleanVar(value=saved_minimize_on_right_click)
 
         # UI用初期値保持
         self._init_fps = fps
@@ -326,10 +400,15 @@ class QuickCompressorApp:
 
         # UI構築
         self._build_ui()
+        
+        # タスクバー進捗用オブジェクトの初期化
+        self.taskbar_progress = TaskbarProgress(self.root)
 
         # 自動開始処理
         if self._auto_start:
             self.root.after(100, self._start_conversion)
+            if self.minimize_on_right_click_var.get():
+                self.root.iconify()
 
         # ウィンドウをマウスポインターがある位置（画面）に配置（マルチディスプレイ対応）
         self.root.update_idletasks()
@@ -1240,6 +1319,21 @@ class QuickCompressorApp:
             command=self._save_app_config
         ).pack(anchor="w", pady=2)
 
+        tk.Checkbutton(
+            close_option_card, text="右クリックから起動時はGUIを最小化した状態で開始する",
+            variable=self.minimize_on_right_click_var,
+            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
+            activeforeground=COLORS["accent"],
+            command=self._save_app_config
+        ).pack(anchor="w", pady=2)
+
+        tk.Label(
+            close_option_card,
+            text="（進捗は画面を表示するか、タスクバーの進捗バーで確認できます）",
+            font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
+        ).pack(anchor="w", padx=24, pady=(0, 6))
+
         # 閉じるボタン
         close_btn = tk.Button(
             pad, text="閉じる",
@@ -1273,6 +1367,8 @@ class QuickCompressorApp:
             config["hide_no_audio_presets"] = self.hide_no_audio_presets_var.get()
         if hasattr(self, 'force_auto_close_on_right_click_var'):
             config["force_auto_close_on_right_click"] = self.force_auto_close_on_right_click_var.get()
+        if hasattr(self, 'minimize_on_right_click_var'):
+            config["minimize_on_right_click"] = self.minimize_on_right_click_var.get()
         
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
         try:
@@ -2138,6 +2234,9 @@ class QuickCompressorApp:
         self.convert_btn.configure(state="disabled", text="変換中...", bg=COLORS["text_dim"])
         self.cancel_btn.pack(side="right", padx=(0, 8))
 
+        # タスクバー: 準備状態 (緑のアニメーション)
+        self.taskbar_progress.set_state(TBPF_INDETERMINATE)
+
         thread = threading.Thread(target=self._run_ffmpeg, daemon=True)
         thread.start()
 
@@ -2147,6 +2246,10 @@ class QuickCompressorApp:
             self.process.terminate()
             self._update_status("❌ 変換が中止されました", color=COLORS["error"])
             self.cancel_btn.pack_forget()
+
+            # タスクバー: エラー状態 (赤色) で中止を表示
+            self.taskbar_progress.set_state(TBPF_ERROR)
+            self.taskbar_progress.set_value(100, 100)
 
     def _run_ffmpeg(self, fallback_encoder=None):
         cmd = self._build_ffmpeg_command(fallback_encoder=fallback_encoder)
@@ -2182,6 +2285,10 @@ class QuickCompressorApp:
                     current = int(h) * 3600 + int(m) * 60 + int(s) + int(cs) / 100
                     progress = min(current / duration * 100, 99.9)
                     self._update_progress(progress)
+                    
+                    # タスクバー: 通常状態 (青/緑) で進捗を更新
+                    self.taskbar_progress.set_state(TBPF_NORMAL)
+                    self.taskbar_progress.set_value(progress * 10, 1000)
 
                     # 速度情報の抽出
                     speed_match = re.search(r"speed=\s*([\d.]+)x", line)
@@ -2275,6 +2382,10 @@ class QuickCompressorApp:
             style = ttk.Style()
             style.configure("Custom.Horizontal.TProgressbar", background=COLORS["success"])
             self.open_btn.pack(side="left")
+            
+            # タスクバー: 進捗表示をクリア (完了)
+            self.taskbar_progress.set_state(TBPF_NOPROGRESS)
+            
             if self.auto_close_var.get():
                 self.root.destroy()
         self.root.after(0, _update)
@@ -2283,6 +2394,11 @@ class QuickCompressorApp:
         def _update():
             style = ttk.Style()
             style.configure("Custom.Horizontal.TProgressbar", background=COLORS["error"])
+            
+            # タスクバー: エラー状態 (赤色)
+            self.taskbar_progress.set_state(TBPF_ERROR)
+            self.taskbar_progress.set_value(100, 100)
+            
         self.root.after(0, _update)
 
     # ─────────────────────────────────────────
