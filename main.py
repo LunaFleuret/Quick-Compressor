@@ -67,6 +67,7 @@ COLORS = {
 
 # コーデック定義
 CODECS = {
+    "自動 (推奨: 環境に合わせて自動選択)": {"encoder": "auto", "ext": "mp4"},
     "H.264 (NVIDIA NVENC)": {"encoder": "h264_nvenc", "ext": "mp4"},
     "HEVC / H.265 (NVIDIA NVENC)": {"encoder": "hevc_nvenc", "ext": "mp4"},
     "AV1 (NVIDIA NVENC)": {"encoder": "av1_nvenc", "ext": "mp4"},
@@ -105,18 +106,8 @@ NVENC_PRESETS = [
 # ユーティリティ関数
 # ─────────────────────────────────────────────
 def detect_gpu_and_default_codec() -> str:
-    """WindowsのWMI(wmic)を利用してGPUを判別し、最適なデフォルトコーデックを返す"""
-    try:
-        cmd = ["wmic", "path", "win32_VideoController", "get", "name"]
-        result = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=3)
-        output = result.stdout.lower()
-        if "nvidia" in output or "geforce" in output:
-            return "HEVC / H.265 (NVIDIA NVENC)"
-        elif "amd" in output or "radeon" in output:
-            return "HEVC / H.265 (AMD AMF)"
-    except Exception:
-        pass
-    return "HEVC / H.265 (NVIDIA NVENC)"
+    """初期選択のデフォルトコーデックを返す"""
+    return "自動 (推奨: 環境に合わせて自動選択)"
 
 def get_video_info(filepath: str) -> dict:
     """FFprobeで動画の情報を取得する"""
@@ -328,7 +319,7 @@ class QuickCompressorApp:
                         fieldbackground=COLORS["bg_input"], selectbackground=COLORS["accent"], 
                         selectforeground=COLORS["text_bright"], bordercolor=COLORS["border"], 
                         darkcolor=COLORS["border"], lightcolor=COLORS["border"])
-        style.map("TCombobox", fieldbackground=[("readonly", COLORS["bg_input"])], selectbackground=[("readonly", COLORS["accent"])], selectforeground=[("readonly", COLORS["text_bright"])])
+        style.map("TCombobox", fieldbackground=[("readonly", COLORS["bg_input"])], selectbackground=[("readonly", COLORS["bg_input"])], selectforeground=[("readonly", COLORS["text"])])
         style.configure("Horizontal.TScale", background=COLORS["accent"], troughcolor=COLORS["progress_trough"])
         style.map("Horizontal.TScale", background=[("active", COLORS["accent"])])
         style.configure("Custom.Horizontal.TProgressbar", troughcolor=COLORS["progress_trough"], background=COLORS["accent"], thickness=8)
@@ -1423,11 +1414,25 @@ class QuickCompressorApp:
     # ─────────────────────────────────────────
     # FFmpegコマンド生成
     # ─────────────────────────────────────────
-    def _build_ffmpeg_command(self) -> list:
+    def _build_ffmpeg_command(self, fallback_encoder=None) -> list:
         codec_name = self.codec_var.get()
         codec_info = CODECS[codec_name]
-        encoder = codec_info["encoder"]
+        encoder = fallback_encoder if fallback_encoder else codec_info["encoder"]
         ext = codec_info["ext"]
+
+        if encoder == "auto":
+            try:
+                cmd = ["wmic", "path", "win32_VideoController", "get", "name"]
+                result = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=3)
+                output = result.stdout.lower()
+                if "amd" in output or "radeon" in output:
+                    encoder = "hevc_amf"
+                else:
+                    encoder = "hevc_nvenc"
+            except Exception:
+                encoder = "hevc_nvenc"
+
+        self.current_encoder = encoder
 
         # 出力ファイルパスの生成
         input_p = Path(self.input_path)
@@ -2144,11 +2149,15 @@ class QuickCompressorApp:
             self._update_status("❌ 変換が中止されました", color=COLORS["error"])
             self.cancel_btn.pack_forget()
 
-    def _run_ffmpeg(self):
-        cmd = self._build_ffmpeg_command()
+    def _run_ffmpeg(self, fallback_encoder=None):
+        cmd = self._build_ffmpeg_command(fallback_encoder=fallback_encoder)
         duration = self.video_info.get("duration", 0)
+        start_time = time.time()
 
-        self._update_status(f"変換中... 出力: {Path(self.output_path).name}")
+        if fallback_encoder:
+            self._update_status(f"再試行中 (H.264)... 出力: {Path(self.output_path).name}")
+        else:
+            self._update_status(f"変換中... 出力: {Path(self.output_path).name}")
         self._update_progress(0)
 
         try:
@@ -2183,6 +2192,7 @@ class QuickCompressorApp:
                     )
 
             self.process.wait()
+            elapsed_time = time.time() - start_time
 
             if self.process.returncode == 0:
                 self._update_progress(100)
@@ -2223,6 +2233,18 @@ class QuickCompressorApp:
                     except Exception:
                         pass
             else:
+                current_enc = getattr(self, "current_encoder", "")
+                if elapsed_time < 2.0 and current_enc in ("hevc_nvenc", "hevc_amf") and not fallback_encoder:
+                    if hasattr(self, "output_path") and os.path.exists(self.output_path):
+                        try:
+                            os.remove(self.output_path)
+                        except Exception:
+                            pass
+                    fallback = "h264_nvenc" if current_enc == "hevc_nvenc" else "h264_amf"
+                    self._update_status("H.265非対応の可能性があるため、H.264で再試行します...", color=COLORS["warning"])
+                    self._run_ffmpeg(fallback_encoder=fallback)
+                    return
+
                 stderr_out = self.process.stderr.read() if self.process.stderr else ""
                 self._update_status(f"❌ 変換失敗 (コード: {self.process.returncode})", color=COLORS["error"])
                 self._show_error(f"FFmpegがエラーで終了しました。\n\n終了コード: {self.process.returncode}")
