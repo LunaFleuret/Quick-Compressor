@@ -28,7 +28,7 @@ except ImportError:
 # バージョン情報とリポジトリ設定
 # ─────────────────────────────────────────────
 # バージョン情報（アプリのタイトルやアップデートチェックに使用）
-CURRENT_VERSION = "2.0.0"
+CURRENT_VERSION = "2.0.1"
 GITHUB_REPO = "LunaFleuret/Quick-Compressor"
 
 # ─────────────────────────────────────────────
@@ -83,7 +83,6 @@ CUVID_DECODERS = {
     "h264": "h264_cuvid",
     "hevc": "hevc_cuvid",
     "vp9": "vp9_cuvid",
-    "av1": "av1_cuvid",
     "mpeg4": "mpeg4_cuvid",
     "mpeg2video": "mpeg2_cuvid",
     "mpeg1video": "mpeg1_cuvid",
@@ -1461,14 +1460,15 @@ class QuickCompressorApp:
                     cmd.extend(["-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
                                "-c:v", cuvid_decoder])
             else:
-                cmd.extend(["-hwaccel", "cuda"])
+                cmd.extend(["-hwaccel", "auto"])
         
             
         cmd.extend(["-i", self.input_path])
 
         # ビデオ設定
         cmd.extend(["-c:v", encoder])
-        cmd.extend(["-pix_fmt", "yuv420p"])  # 高い再生互換性のためのピクセルフォーマット指定
+        if not use_gpu_decode:
+            cmd.extend(["-pix_fmt", "yuv420p"])  # 高い再生互換性のためのピクセルフォーマット指定 (GPUデコード時はエンコーダに任せる)
         
         if "hevc" in encoder:
             cmd.extend(["-tag:v", "hvc1"])   # iPhone/Appleデバイス互換性のためのタグ
