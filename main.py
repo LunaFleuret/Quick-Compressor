@@ -140,7 +140,7 @@ COLORS = {
     "text_dim":     "#6c757d",
     "text_bright":  "#ffffff",
     "success":      "#198754",
-    "warning":      "#ffc107",
+    "warning":      "#e58f00",
     "error":        "#dc3545",
     "border":       "#dee2e6",
     "slider_track": "#e9ecef",
