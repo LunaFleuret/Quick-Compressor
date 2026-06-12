@@ -110,6 +110,18 @@ def get_app_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 APP_DIR = get_app_dir()
+
+def load_custom_font():
+    font_path = os.path.join(APP_DIR, "りぃポップ角riipopkr", "RiiPopkkR.otf")
+    if os.path.exists(font_path) and sys.platform == "win32":
+        try:
+            FR_PRIVATE = 0x10
+            ctypes.windll.gdi32.AddFontResourceExW(font_path, FR_PRIVATE, 0)
+        except Exception as e:
+            print(f"Font load error: {e}")
+
+load_custom_font()
+
 _bundled_ffmpeg = os.path.join(APP_DIR, "bin", "ffmpeg.exe")
 _bundled_ffprobe = os.path.join(APP_DIR, "bin", "ffprobe.exe")
 
@@ -134,6 +146,10 @@ COLORS = {
     "slider_track": "#e9ecef",
     "progress_trough": "#e9ecef",
 }
+
+# フォント設定
+APP_FONT = "RiiPopkaku-R"
+
 
 # コーデック定義
 CODECS = {
@@ -501,7 +517,7 @@ class QuickCompressorApp:
         self.preset_banner = tk.Frame(main_frame, bg=COLORS["success"], pady=12)
         self.preset_banner_label = tk.Label(
             self.preset_banner, text="プリセット作成モード：現在の設定をプリセットとして保存できます",
-            font=("Segoe UI", 12, "bold"), fg=COLORS["text_bright"], bg=COLORS["success"]
+            font=(APP_FONT, 13), fg=COLORS["text_bright"], bg=COLORS["success"]
         )
         self.preset_banner_label.pack()
 
@@ -511,7 +527,7 @@ class QuickCompressorApp:
 
         tk.Label(
             self.title_frame, text="⚡ Quick Compressor",
-            font=("Segoe UI", 18, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 19), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(side="left")
 
         # --- サブアクションバー (2段目) ---
@@ -522,7 +538,7 @@ class QuickCompressorApp:
         self.is_topmost = False
         self.pin_btn = tk.Button(
             self.action_frame, text="📌 最前面",
-            font=("Segoe UI", 11), fg=COLORS["text_dim"],
+            font=(APP_FONT, 11), fg=COLORS["text_dim"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["accent"],
             relief="flat", cursor="hand2", padx=8, pady=2,
@@ -537,7 +553,7 @@ class QuickCompressorApp:
         # 設定ボタン
         settings_btn = tk.Button(
             self.action_frame, text="⚙ 設定",
-            font=("Segoe UI", 11), fg=COLORS["text_dim"],
+            font=(APP_FONT, 11), fg=COLORS["text_dim"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["accent"],
             relief="flat", cursor="hand2", padx=8, pady=2,
@@ -549,7 +565,7 @@ class QuickCompressorApp:
         # プリセット作成ボタン
         self.preset_btn = tk.Button(
             self.action_frame, text="プリセット作成",
-            font=("Segoe UI", 11), fg=COLORS["success"],
+            font=(APP_FONT, 11), fg=COLORS["success"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["success"],
             relief="flat", cursor="hand2", padx=8, pady=2,
@@ -560,7 +576,7 @@ class QuickCompressorApp:
 
         preset_manage_btn = tk.Button(
             self.action_frame, text="プリセット管理",
-            font=("Segoe UI", 11), fg=COLORS["accent"],
+            font=(APP_FONT, 11), fg=COLORS["accent"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["accent"],
             relief="flat", cursor="hand2", padx=8, pady=2,
@@ -600,7 +616,7 @@ class QuickCompressorApp:
             widget.destroy()
         btn = tk.Button(
             self.card_frame, text="動画ファイルを選択 または ドロップ",
-            font=("Segoe UI", 11, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 12), fg=COLORS["accent"], bg=COLORS["bg_card"],
             activebackground=COLORS["bg_input"], activeforeground=COLORS["accent_hover"],
             relief="flat", cursor="hand2", pady=8,
             command=self._select_file
@@ -623,21 +639,21 @@ class QuickCompressorApp:
             
         tk.Label(
             header_frame, text="※クリック または ドロップで変更",
-            font=("Segoe UI", 9, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 10), fg=COLORS["accent"], bg=COLORS["bg_card"],
         ).pack(side="right")
         
         if hasattr(self, 'input_paths') and len(self.input_paths) > 1:
             # 複数ファイルの場合の表示
             tk.Label(
                 header_frame, text=f"📁 {len(self.input_paths)} 個のファイルが選択されています",
-                font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"],
+                font=(APP_FONT, 12), fg=COLORS["text"], bg=COLORS["bg_card"],
                 anchor="w"
             ).pack(side="left", fill="x", expand=True)
             
             detail_frame = tk.Frame(self.card_frame, bg=COLORS["bg_card"])
             detail_frame.pack(fill="x", pady=(6, 0))
             tk.Label(detail_frame, text="先頭のファイルに基づいて容量制限などを予測・計算します", fg=COLORS["text_dim"],
-                     bg=COLORS["bg_card"], font=("Segoe UI", 9)).pack(side="left")
+                     bg=COLORS["bg_card"], font=(APP_FONT, 9)).pack(side="left")
         else:
             # 1つの場合のファイル名
             file_path = Path(self.input_path)
@@ -653,7 +669,7 @@ class QuickCompressorApp:
             
             tk.Label(
                 header_frame, text=f"📁 {filename}",
-                font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"],
+                font=(APP_FONT, 12), fg=COLORS["text"], bg=COLORS["bg_card"],
                 anchor="w"
             ).pack(side="left", fill="x", expand=True)
 
@@ -674,9 +690,9 @@ class QuickCompressorApp:
             for i, detail in enumerate(details):
                 if i > 0:
                     tk.Label(detail_frame, text="  •  ", fg=COLORS["text_dim"],
-                             bg=COLORS["bg_card"], font=("Segoe UI", 9)).pack(side="left")
+                             bg=COLORS["bg_card"], font=(APP_FONT, 9)).pack(side="left")
                 tk.Label(detail_frame, text=detail, fg=COLORS["text_dim"],
-                         bg=COLORS["bg_card"], font=("Segoe UI", 9)).pack(side="left")
+                         bg=COLORS["bg_card"], font=(APP_FONT, 9)).pack(side="left")
 
         # クリックイベントを全体に適用
         bind_click(self.card_frame)
@@ -704,8 +720,8 @@ class QuickCompressorApp:
         inner_frame = tk.Frame(self._drop_overlay, bg=COLORS["bg_dark"])
         inner_frame.pack(expand=True)
         
-        tk.Label(inner_frame, text="📥", font=("Segoe UI", 48), fg=COLORS["accent"], bg=COLORS["bg_dark"]).pack()
-        tk.Label(inner_frame, text="ここにドロップして変更", font=("Segoe UI", 24, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]).pack(pady=10)
+        tk.Label(inner_frame, text="📥", font=(APP_FONT, 48), fg=COLORS["accent"], bg=COLORS["bg_dark"]).pack()
+        tk.Label(inner_frame, text="ここにドロップして変更", font=(APP_FONT, 25), fg=COLORS["accent"], bg=COLORS["bg_dark"]).pack(pady=10)
         
         if HAS_DND:
             self._drop_overlay.drop_target_register(DND_FILES)
@@ -782,13 +798,13 @@ class QuickCompressorApp:
         preset_apply_label_frame.pack(fill="x")
 
         tk.Label(preset_apply_label_frame, text="保存済みのプリセットを適用",
-                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left")
 
         self.apply_preset_var = tk.StringVar(value="選択してください...")
         self.preset_apply_combo = ttk.Combobox(
             preset_apply_frame, textvariable=self.apply_preset_var,
-            state="readonly", font=("Segoe UI", 11)
+            state="readonly", font=(APP_FONT, 11)
         )
         self.preset_apply_combo.pack(fill="x", pady=(4, 0))
         self.preset_apply_combo.bind("<<ComboboxSelected>>", self._on_preset_apply_select)
@@ -805,13 +821,13 @@ class QuickCompressorApp:
         codec_frame.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
         tk.Label(codec_frame, text="出力コーデック",
-                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
         self.codec_var = tk.StringVar(value=self._init_codec)
         codec_combo = ttk.Combobox(codec_frame, textvariable=self.codec_var,
                                    values=list(CODECS.keys()), state="readonly",
-                                   font=("Segoe UI", 11), width=22)
+                                   font=(APP_FONT, 11), width=22)
         codec_combo.pack(fill="x", pady=(4, 0))
 
         # フレームレート
@@ -819,7 +835,7 @@ class QuickCompressorApp:
         fps_frame.pack(side="left", fill="x", expand=True, padx=(8, 0))
 
         tk.Label(fps_frame, text="フレームレート",
-                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
         self.fps_var = tk.StringVar(value=self._init_fps)
@@ -829,7 +845,7 @@ class QuickCompressorApp:
         for fps_option in FRAME_RATES:
             btn = tk.Radiobutton(
                 fps_btn_frame, text=fps_option, variable=self.fps_var, value=fps_option,
-                font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
+                font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
                 selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
                 activeforeground=COLORS["accent"], indicatoron=0,
                 padx=10, pady=4, relief="flat",
@@ -842,7 +858,7 @@ class QuickCompressorApp:
         resolution_frame.pack(fill="x", pady=(0, 12))
 
         tk.Label(resolution_frame, text="解像度",
-                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
         self.resolution_var = tk.StringVar(value=self._init_resolution)
@@ -852,7 +868,7 @@ class QuickCompressorApp:
         for res_option in RESOLUTIONS:
             btn = tk.Radiobutton(
                 resolution_btn_frame, text=res_option, variable=self.resolution_var, value=res_option,
-                font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
+                font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
                 selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
                 activeforeground=COLORS["accent"], indicatoron=0,
                 padx=10, pady=4, relief="flat",
@@ -865,14 +881,14 @@ class QuickCompressorApp:
         self.resolution_preview_label = tk.Label(
             resolution_frame,
             text=f"{self.video_info['width']}×{self.video_info['height']} → {self.video_info['width']}×{self.video_info['height']}",
-            font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
         )
         self.resolution_preview_label.pack(anchor="w")
 
         self.resolution_warning_label = tk.Label(
             resolution_frame,
             text="",
-            font=("Segoe UI", 12, "bold"), fg=COLORS["error"], bg=COLORS["bg_dark"],
+            font=(APP_FONT, 13), fg=COLORS["error"], bg=COLORS["bg_dark"],
             justify="left"
         )
         self.resolution_warning_label.pack(anchor="w", pady=(2, 0))
@@ -886,14 +902,14 @@ class QuickCompressorApp:
         mode_frame.pack(fill="x", pady=(0, 8))
 
         tk.Label(mode_frame, text="設定モード",
-                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left", padx=(0, 12))
 
         self.mode_var = tk.StringVar(value="cq" if not self._target_size_mb else "size")
         
         tk.Radiobutton(
             mode_frame, text="品質優先 (CQ)", variable=self.mode_var, value="cq",
-            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
             selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
             activeforeground=COLORS["accent"], indicatoron=0,
             padx=10, pady=4, relief="flat",
@@ -903,7 +919,7 @@ class QuickCompressorApp:
 
         tk.Radiobutton(
             mode_frame, text="容量優先 (MB指定)", variable=self.mode_var, value="size",
-            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
             selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
             activeforeground=COLORS["accent"], indicatoron=0,
             padx=10, pady=4, relief="flat",
@@ -913,7 +929,7 @@ class QuickCompressorApp:
 
         tk.Radiobutton(
             mode_frame, text="割合指定 (%)", variable=self.mode_var, value="percent",
-            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
             selectcolor=COLORS["bg_input"], activebackground=COLORS["bg_dark"],
             activeforeground=COLORS["accent"], indicatoron=0,
             padx=10, pady=4, relief="flat",
@@ -928,12 +944,12 @@ class QuickCompressorApp:
         quality_label_frame.pack(fill="x")
 
         tk.Label(quality_label_frame, text="画質 (品質優先 ← → ファイルサイズ優先)",
-                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left")
 
         self.quality_value_label = tk.Label(
             quality_label_frame, text="CQ 25 (高画質)",
-            font=("Segoe UI", 12, "bold"), fg=COLORS["success"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 13), fg=COLORS["success"], bg=COLORS["bg_dark"]
         )
         self.quality_value_label.pack(side="right")
 
@@ -948,7 +964,7 @@ class QuickCompressorApp:
         self.quality_desc_label = tk.Label(
             self.cq_frame,
             text="CQ値が低い ← 高画質・大ファイル ｜ 低画質・小ファイル → CQ値が高い",
-            font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
         )
         self.quality_desc_label.pack(anchor="w")
 
@@ -959,7 +975,7 @@ class QuickCompressorApp:
         size_label_frame.pack(fill="x")
         
         tk.Label(size_label_frame, text="目標ファイルサイズ (MB)",
-                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left")
 
         size_input_frame = tk.Frame(self.size_frame, bg=COLORS["bg_dark"])
@@ -970,18 +986,18 @@ class QuickCompressorApp:
         self.size_combo = ttk.Combobox(
             size_input_frame, textvariable=self.target_size_var,
             values=["8", "10", "25", "30", "50", "100"],
-            font=("Segoe UI", 11), width=8
+            font=(APP_FONT, 11), width=8
         )
         self.size_combo.pack(side="left")
         
         tk.Label(size_input_frame, text=" MB のサイズまで圧縮",
-                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left", padx=(8, 0))
 
         tk.Label(
             self.size_frame,
             text="指定した容量に収まるようにビットレートを自動調整します",
-            font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
         ).pack(anchor="w", pady=(4, 0))
 
         # --- 割合指定(%)用UI ---
@@ -991,7 +1007,7 @@ class QuickCompressorApp:
         percent_label_frame.pack(fill="x")
         
         tk.Label(percent_label_frame, text="目標ファイルサイズ割合 (%)",
-                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left")
 
         percent_input_frame = tk.Frame(self.percent_frame, bg=COLORS["bg_dark"])
@@ -1002,18 +1018,18 @@ class QuickCompressorApp:
         self.percent_combo = ttk.Combobox(
             percent_input_frame, textvariable=self.target_percent_var,
             values=["25", "30", "50", "75", "80"],
-            font=("Segoe UI", 11), width=8
+            font=(APP_FONT, 11), width=8
         )
         self.percent_combo.pack(side="left")
         
         tk.Label(percent_input_frame, text=" % のサイズまで圧縮",
-                 font=("Segoe UI", 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left", padx=(8, 0))
 
         tk.Label(
             self.percent_frame,
             text="元のファイルサイズから計算し、指定した割合に収まるように自動調整します",
-            font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
         ).pack(anchor="w", pady=(4, 0))
 
         # 初期表示の切り替え
@@ -1027,7 +1043,7 @@ class QuickCompressorApp:
         self.audio_check_btn = tk.Checkbutton(
             audio_frame, text="音声を含める",
             variable=self.audio_var,
-            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_dark"],
             selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_dark"],
             activeforeground=COLORS["accent"],
         )
@@ -1061,7 +1077,7 @@ class QuickCompressorApp:
         # ステータスラベル
         self.status_label = tk.Label(
             progress_frame, text="準備完了",
-            font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg_dark"],
+            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_dark"],
             anchor="w"
         )
         self.status_label.pack(fill="x")
@@ -1073,7 +1089,7 @@ class QuickCompressorApp:
         # 変換ボタン
         self.convert_btn = tk.Button(
             btn_frame, text="⚡ 圧縮開始",
-            font=("Segoe UI", 13, "bold"), fg=COLORS["text_bright"],
+            font=(APP_FONT, 14), fg=COLORS["text_bright"],
             bg=COLORS["accent"], activebackground=COLORS["accent_hover"],
             activeforeground=COLORS["text_bright"],
             disabledforeground=COLORS["text_bright"],
@@ -1085,7 +1101,7 @@ class QuickCompressorApp:
         # 中止ボタン（初期状態では非表示）
         self.cancel_btn = tk.Button(
             btn_frame, text="✖ 中止",
-            font=("Segoe UI", 11, "bold"), fg=COLORS["error"],
+            font=(APP_FONT, 12), fg=COLORS["error"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["error"],
             relief="flat", padx=16, pady=10, cursor="hand2",
@@ -1096,7 +1112,7 @@ class QuickCompressorApp:
         # ファイルを開くボタン（変換後に表示）
         self.open_btn = tk.Button(
             btn_frame, text="📂 出力先を開く",
-            font=("Segoe UI", 10), fg=COLORS["text"],
+            font=(APP_FONT, 10), fg=COLORS["text"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["text_bright"],
             relief="flat", padx=16, pady=8, cursor="hand2",
@@ -1162,7 +1178,7 @@ class QuickCompressorApp:
 
         tk.Label(
             pad, text="⚙ 詳細設定",
-            font=("Segoe UI", 14, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 15), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(anchor="w", pady=(0, 12))
 
         # --- 統計情報 ---
@@ -1183,18 +1199,18 @@ class QuickCompressorApp:
             
             tk.Label(
                 stats_card, text="📊 統計情報",
-                font=("Segoe UI", 10, "bold"), fg=COLORS["success"], bg=COLORS["bg_card"]
+                font=(APP_FONT, 11), fg=COLORS["success"], bg=COLORS["bg_card"]
             ).pack(anchor="w")
             
             tk.Label(
                 stats_card, text=f"これまでの累計節約容量： {format_filesize(total_saved)}",
-                font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
+                font=(APP_FONT, 12), fg=COLORS["text"], bg=COLORS["bg_card"]
             ).pack(anchor="w", pady=(4, 0))
 
             total_files = config_data.get("total_converted_files", 0) if 'config_data' in locals() else 0
             tk.Label(
                 stats_card, text=f"これまでの累計変換数： {total_files} 個",
-                font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
+                font=(APP_FONT, 12), fg=COLORS["text"], bg=COLORS["bg_card"]
             ).pack(anchor="w", pady=(2, 0))
 
         # --- エンコードプリセット ---
@@ -1204,20 +1220,20 @@ class QuickCompressorApp:
 
         tk.Label(
             preset_card, text="エンコードプリセット",
-            font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"]
         ).pack(anchor="w")
 
         self.preset_desc_label = tk.Label(
             preset_card,
             text="速い → ファイルサイズ大  /  遅い → ファイルサイズ小",
-            font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
+            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
         )
         self.preset_desc_label.pack(anchor="w", pady=(0, 6))
 
         amd_note_label = tk.Label(
             preset_card,
             text="※注意点：AMDの場合、P1からP3までがSpeed、\nP4がbalance、P5からP7までがQuality設定となっています。",
-            font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
             justify="left", anchor="w"
         )
         amd_note_label.pack(anchor="w", pady=(0, 6))
@@ -1231,7 +1247,7 @@ class QuickCompressorApp:
         self.preset_display_var = tk.StringVar()
         preset_combo = ttk.Combobox(
             preset_card, textvariable=self.preset_display_var,
-            state="readonly", font=("Segoe UI", 11), width=26
+            state="readonly", font=(APP_FONT, 11), width=26
         )
         preset_combo.pack(anchor="w", pady=(2, 6))
         
@@ -1294,7 +1310,7 @@ class QuickCompressorApp:
 
         tk.Label(
             audio_card, text="音声処理モード",
-            font=("Segoe UI", 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"]
         ).pack(anchor="w", pady=(0, 6))
 
         self.audio_copy_var = tk.BooleanVar(value=self.audio_mode_var.get() == "copy")
@@ -1323,7 +1339,7 @@ class QuickCompressorApp:
         tk.Checkbutton(
             audio_card, text="コピー（そのまま）— 音質劣化なし",
             variable=self.audio_copy_var,
-            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"],
             selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
             activeforeground=COLORS["accent"],
             command=lambda: _on_audio_cb_click("copy")
@@ -1332,7 +1348,7 @@ class QuickCompressorApp:
         tk.Checkbutton(
             audio_card, text="再エンコード（AAC 128kbps）— 容量を抑えた標準形式",
             variable=self.audio_reencode_var,
-            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"],
             selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
             activeforeground=COLORS["accent"],
             command=lambda: _on_audio_cb_click("reencode")
@@ -1346,7 +1362,7 @@ class QuickCompressorApp:
         tk.Checkbutton(
             close_option_card, text="変換完了後に自動で閉じる",
             variable=self.auto_close_var,
-            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"],
             selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
             activeforeground=COLORS["accent"],
             command=self._save_app_config
@@ -1355,7 +1371,7 @@ class QuickCompressorApp:
         tk.Checkbutton(
             close_option_card, text="右クリックから起動時は強制的に自動で閉じる",
             variable=self.force_auto_close_on_right_click_var,
-            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"],
             selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
             activeforeground=COLORS["accent"],
             command=self._save_app_config
@@ -1364,7 +1380,7 @@ class QuickCompressorApp:
         tk.Checkbutton(
             close_option_card, text="元のメタデータ（撮影日時など）を引き継ぐ",
             variable=self.keep_metadata_var,
-            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"],
             selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
             activeforeground=COLORS["accent"],
             command=self._save_app_config
@@ -1373,7 +1389,7 @@ class QuickCompressorApp:
         tk.Checkbutton(
             close_option_card, text="右クリックから起動時はGUIを最小化した状態で開始する",
             variable=self.minimize_on_right_click_var,
-            font=("Segoe UI", 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"],
             selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
             activeforeground=COLORS["accent"],
             command=self._save_app_config
@@ -1382,13 +1398,13 @@ class QuickCompressorApp:
         tk.Label(
             close_option_card,
             text="（進捗は画面を表示するか、タスクバーの進捗バーで確認できます）",
-            font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
+            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
         ).pack(anchor="w", padx=24, pady=(0, 6))
 
         # 閉じるボタン
         close_btn = tk.Button(
             pad, text="閉じる",
-            font=("Segoe UI", 10), fg=COLORS["text"],
+            font=(APP_FONT, 10), fg=COLORS["text"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["text_bright"],
             relief="flat", padx=20, pady=6, cursor="hand2",
@@ -1843,7 +1859,7 @@ class QuickCompressorApp:
 
         tk.Label(
             pad, text="プリセット一覧",
-            font=("Segoe UI", 12, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 13), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(anchor="w", pady=(0, 8))
 
         list_frame = tk.Frame(pad, bg=COLORS["bg_card"], highlightbackground=COLORS["border"], highlightthickness=1)
@@ -1853,7 +1869,7 @@ class QuickCompressorApp:
         scrollbar.pack(side="right", fill="y")
 
         self.preset_listbox = tk.Listbox(
-            list_frame, font=("Segoe UI", 10), bg=COLORS["bg_input"], fg=COLORS["text"],
+            list_frame, font=(APP_FONT, 10), bg=COLORS["bg_input"], fg=COLORS["text"],
             selectbackground=COLORS["accent"], selectforeground=COLORS["text_bright"],
             relief="flat", borderwidth=0, highlightthickness=0,
             yscrollcommand=scrollbar.set
@@ -1874,7 +1890,7 @@ class QuickCompressorApp:
         tk.Checkbutton(
             pad, text="デフォルトのノーオーディオプリセットを非表示",
             variable=self.hide_no_audio_presets_var,
-            font=("Segoe UI", 10), fg=COLORS["text"], bg=COLORS["bg_dark"],
+            font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_dark"],
             selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_dark"],
             activeforeground=COLORS["accent"],
             command=_on_hide_cb_click
@@ -1883,7 +1899,7 @@ class QuickCompressorApp:
         edit_frame = tk.Frame(pad, bg=COLORS["bg_dark"])
         edit_frame.pack(fill="x")
 
-        tk.Label(edit_frame, text="選択中の名前を変更:", font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_dark"]).pack(anchor="w")
+        tk.Label(edit_frame, text="選択中の名前を変更:", font=(APP_FONT, 9), fg=COLORS["text"], bg=COLORS["bg_dark"]).pack(anchor="w")
         
         rename_frame = tk.Frame(edit_frame, bg=COLORS["bg_dark"])
         rename_frame.pack(fill="x", pady=(4, 12))
@@ -1891,7 +1907,7 @@ class QuickCompressorApp:
         self.preset_name_var = tk.StringVar()
         name_entry = tk.Entry(
             rename_frame, textvariable=self.preset_name_var,
-            font=("Segoe UI", 10), bg=COLORS["bg_input"], fg=COLORS["text"],
+            font=(APP_FONT, 10), bg=COLORS["bg_input"], fg=COLORS["text"],
             relief="flat", highlightbackground=COLORS["border"], highlightthickness=1,
             insertbackground=COLORS["text"]
         )
@@ -1899,7 +1915,7 @@ class QuickCompressorApp:
 
         rename_btn = tk.Button(
             rename_frame, text="変更",
-            font=("Segoe UI", 9), fg=COLORS["text_bright"], bg=COLORS["accent"],
+            font=(APP_FONT, 9), fg=COLORS["text_bright"], bg=COLORS["accent"],
             activebackground=COLORS["accent_hover"], activeforeground=COLORS["text_bright"],
             relief="flat", cursor="hand2", padx=12,
             command=self._rename_preset
@@ -1911,7 +1927,7 @@ class QuickCompressorApp:
 
         delete_btn = tk.Button(
             action_frame, text="🗑 削除",
-            font=("Segoe UI", 9), fg=COLORS["error"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 9), fg=COLORS["error"], bg=COLORS["bg_card"],
             activebackground=COLORS["bg_input"], activeforeground=COLORS["error"],
             relief="flat", cursor="hand2", padx=12, pady=6,
             highlightbackground=COLORS["border"], highlightthickness=1,
@@ -1921,7 +1937,7 @@ class QuickCompressorApp:
 
         close_btn = tk.Button(
             action_frame, text="閉じる",
-            font=("Segoe UI", 9), fg=COLORS["text"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 9), fg=COLORS["text"], bg=COLORS["bg_card"],
             activebackground=COLORS["bg_input"], activeforeground=COLORS["text_bright"],
             relief="flat", cursor="hand2", padx=16, pady=6,
             command=win.destroy
@@ -2526,7 +2542,7 @@ class QuickCompressorApp:
     def _update_status(self, text, color=None, font_size=9, is_bold=False):
         fg_color = color if color else COLORS["text_dim"]
         font_weight = "bold" if is_bold else "normal"
-        self.root.after(0, lambda: self.status_label.configure(text=text, fg=fg_color, font=("Segoe UI", font_size, font_weight)))
+        self.root.after(0, lambda: self.status_label.configure(text=text, fg=fg_color, font=(APP_FONT, font_size)))
 
     def _show_success(self):
         def _update():

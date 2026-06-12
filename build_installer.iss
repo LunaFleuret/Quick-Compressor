@@ -17,6 +17,8 @@ Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 ; 本体と初期設定ファイル
 Source: "dist\QuickCompressor.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\default_presets.json"; DestDir: "{app}"; Flags: ignoreversion
+; フォントファイル
+Source: "dist\りぃポップ角riipopkr\*"; DestDir: "{app}\りぃポップ角riipopkr"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; FFmpeg関連ファイル (binフォルダ内)
 Source: "dist\bin\*"; DestDir: "{app}\bin"; Flags: ignoreversion recursesubdirs createallsubdirs
 

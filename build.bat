@@ -20,6 +20,7 @@ echo.
 echo [2] 配布用フォルダの準備...
 if not exist "dist\bin" mkdir "dist\bin"
 copy default_presets.json "dist\"
+xcopy "りぃポップ角riipopkr" "dist\りぃポップ角riipopkr\" /E /I /Y
 
 echo.
 echo [3] FFmpeg バイナリの確認...
