@@ -308,7 +308,10 @@ class QuickCompressorApp:
                  auto_close: bool = False):
         self.preset_mode = False
         self.root = root
+        self.input_paths = [input_path] if input_path else []
         self.input_path = input_path
+        self.current_file_index = 0
+        self.batch_saved_bytes = 0
         self.is_converting = False
         self.process = None
 
@@ -615,18 +618,6 @@ class QuickCompressorApp:
             for child in widget.winfo_children():
                 bind_click(child)
 
-        # ファイル名
-        file_path = Path(self.input_path)
-        filename = file_path.name
-        MAX_LEN = 22
-        if len(filename) > MAX_LEN:
-            ext = file_path.suffix
-            stem_len = MAX_LEN - len(ext) - 3
-            if stem_len > 0:
-                filename = file_path.stem[:stem_len] + "..." + ext
-            else:
-                filename = filename[:MAX_LEN-3] + "..."
-            
         header_frame = tk.Frame(self.card_frame, bg=COLORS["bg_card"])
         header_frame.pack(fill="x")
             
@@ -635,32 +626,57 @@ class QuickCompressorApp:
             font=("Segoe UI", 9, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
         ).pack(side="right")
         
-        tk.Label(
-            header_frame, text=f"📁 {filename}",
-            font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"],
-            anchor="w"
-        ).pack(side="left", fill="x", expand=True)
-
-        # 詳細情報行
-        info = self.video_info
-        detail_frame = tk.Frame(self.card_frame, bg=COLORS["bg_card"])
-        detail_frame.pack(fill="x", pady=(6, 0))
-
-        details = [
-            f"{info['width']}×{info['height']}",
-            f"{info['fps']} fps",
-            f"{info['codec'].upper()}",
-            format_bitrate(info['bitrate']),
-            format_duration(info['duration']),
-            format_filesize(info['filesize']),
-        ]
-
-        for i, detail in enumerate(details):
-            if i > 0:
-                tk.Label(detail_frame, text="  •  ", fg=COLORS["text_dim"],
-                         bg=COLORS["bg_card"], font=("Segoe UI", 9)).pack(side="left")
-            tk.Label(detail_frame, text=detail, fg=COLORS["text_dim"],
+        if hasattr(self, 'input_paths') and len(self.input_paths) > 1:
+            # 複数ファイルの場合の表示
+            tk.Label(
+                header_frame, text=f"📁 {len(self.input_paths)} 個のファイルが選択されています",
+                font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"],
+                anchor="w"
+            ).pack(side="left", fill="x", expand=True)
+            
+            detail_frame = tk.Frame(self.card_frame, bg=COLORS["bg_card"])
+            detail_frame.pack(fill="x", pady=(6, 0))
+            tk.Label(detail_frame, text="先頭のファイルに基づいて容量制限などを予測・計算します", fg=COLORS["text_dim"],
                      bg=COLORS["bg_card"], font=("Segoe UI", 9)).pack(side="left")
+        else:
+            # 1つの場合のファイル名
+            file_path = Path(self.input_path)
+            filename = file_path.name
+            MAX_LEN = 22
+            if len(filename) > MAX_LEN:
+                ext = file_path.suffix
+                stem_len = MAX_LEN - len(ext) - 3
+                if stem_len > 0:
+                    filename = file_path.stem[:stem_len] + "..." + ext
+                else:
+                    filename = filename[:MAX_LEN-3] + "..."
+            
+            tk.Label(
+                header_frame, text=f"📁 {filename}",
+                font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"],
+                anchor="w"
+            ).pack(side="left", fill="x", expand=True)
+
+            # 詳細情報行
+            info = self.video_info
+            detail_frame = tk.Frame(self.card_frame, bg=COLORS["bg_card"])
+            detail_frame.pack(fill="x", pady=(6, 0))
+
+            details = [
+                f"{info['width']}×{info['height']}",
+                f"{info['fps']} fps",
+                f"{info['codec'].upper()}",
+                format_bitrate(info['bitrate']),
+                format_duration(info['duration']),
+                format_filesize(info['filesize']),
+            ]
+
+            for i, detail in enumerate(details):
+                if i > 0:
+                    tk.Label(detail_frame, text="  •  ", fg=COLORS["text_dim"],
+                             bg=COLORS["bg_card"], font=("Segoe UI", 9)).pack(side="left")
+                tk.Label(detail_frame, text=detail, fg=COLORS["text_dim"],
+                         bg=COLORS["bg_card"], font=("Segoe UI", 9)).pack(side="left")
 
         # クリックイベントを全体に適用
         bind_click(self.card_frame)
@@ -714,13 +730,14 @@ class QuickCompressorApp:
         files = self.root.tk.splitlist(event.data)
         if not files:
             return
-        filepath = files[0]
-        
-        self.input_path = filepath
+            
+        self.input_paths = list(files)
+        self.input_path = self.input_paths[0]
         self.video_info = get_video_info(self.input_path)
         if "error" in self.video_info:
             messagebox.showerror("エラー", f"動画の読み込みに失敗しました:\n{self.video_info['error']}")
             self.input_path = None
+            self.input_paths = []
             self._build_empty_file_info()
             self._update_ui_state()
             return
@@ -729,20 +746,22 @@ class QuickCompressorApp:
         self._update_ui_state()
 
     def _select_file(self):
-        filepath = filedialog.askopenfilename(
-            title="変換する動画ファイルを選択",
+        filepaths = filedialog.askopenfilenames(
+            title="変換する動画ファイルを選択（複数選択可）",
             filetypes=[
                 ("動画ファイル", "*.mp4 *.mkv *.mov *.avi *.webm *.wmv *.flv *.ts *.m2ts"),
                 ("すべてのファイル", "*.*"),
             ],
         )
-        if filepath:
-            self.input_path = filepath
+        if filepaths:
+            self.input_paths = list(filepaths)
+            self.input_path = self.input_paths[0]
             # 動画情報を再取得
             self.video_info = get_video_info(self.input_path)
             if "error" in self.video_info:
                 messagebox.showerror("エラー", f"動画の読み込みに失敗しました:\n{self.video_info['error']}")
                 self.input_path = None
+                self.input_paths = []
                 self._build_empty_file_info()
                 self._update_ui_state()
                 return
@@ -1145,6 +1164,38 @@ class QuickCompressorApp:
             pad, text="⚙ 詳細設定",
             font=("Segoe UI", 14, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(anchor="w", pady=(0, 12))
+
+        # --- 統計情報 ---
+        config_path = os.path.join(register_menu.DATA_DIR, "config.json")
+        total_saved = 0
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config_data = json.load(f)
+                    total_saved = config_data.get("total_saved_bytes", 0)
+            except Exception:
+                pass
+                
+        if total_saved >= 0:
+            stats_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
+                                   highlightbackground=COLORS["success"], highlightthickness=1)
+            stats_card.pack(fill="x", pady=(0, 10))
+            
+            tk.Label(
+                stats_card, text="📊 統計情報",
+                font=("Segoe UI", 10, "bold"), fg=COLORS["success"], bg=COLORS["bg_card"]
+            ).pack(anchor="w")
+            
+            tk.Label(
+                stats_card, text=f"これまでの累計節約容量： {format_filesize(total_saved)}",
+                font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
+            ).pack(anchor="w", pady=(4, 0))
+
+            total_files = config_data.get("total_converted_files", 0) if 'config_data' in locals() else 0
+            tk.Label(
+                stats_card, text=f"これまでの累計変換数： {total_files} 個",
+                font=("Segoe UI", 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
+            ).pack(anchor="w", pady=(2, 0))
 
         # --- エンコードプリセット ---
         preset_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
@@ -2216,7 +2267,7 @@ class QuickCompressorApp:
             messagebox.showerror("エラー", f"レジストリの更新に失敗しました:\n{e}")
 
     def _start_conversion(self):
-        if not self.input_path and not self.preset_mode:
+        if not self.input_paths and not getattr(self, 'input_path', None) and not self.preset_mode:
             return
 
         if self.preset_mode:
@@ -2231,14 +2282,54 @@ class QuickCompressorApp:
             return
         self.is_converting = True
         self.is_cancelled = False
+        
+        self.current_file_index = 0
+        self.batch_saved_bytes = 0
+        self.batch_orig_bytes = 0
+        self.batch_out_bytes = 0
+        
         self.convert_btn.configure(state="disabled", text="変換中...", bg=COLORS["text_dim"])
         self.cancel_btn.pack(side="right", padx=(0, 8))
 
         # タスクバー: 準備状態 (緑のアニメーション)
         self.taskbar_progress.set_state(TBPF_INDETERMINATE)
 
+        self._process_next_file()
+
+    def _process_next_file(self):
+        if getattr(self, 'is_cancelled', False):
+            return
+            
+        if self.current_file_index >= len(self.input_paths):
+            self._on_batch_finished()
+            return
+            
+        self.input_path = self.input_paths[self.current_file_index]
+        self.video_info = get_video_info(self.input_path)
+        
         thread = threading.Thread(target=self._run_ffmpeg, daemon=True)
         thread.start()
+
+    def _on_batch_finished(self):
+        if len(self.input_paths) > 1:
+            orig_total = getattr(self, 'batch_orig_bytes', 0)
+            out_total = getattr(self, 'batch_out_bytes', 0)
+            saved = getattr(self, 'batch_saved_bytes', 0)
+            
+            if orig_total > 0 and out_total > 0:
+                ratio = out_total / orig_total * 100
+                status_text = f"✅ {len(self.input_paths)} 個すべての変換完了！ {format_filesize(orig_total)} → {format_filesize(out_total)} ({ratio:.1f}% / 元サイズ)"
+            else:
+                status_text = f"✅ {len(self.input_paths)} 個すべての変換が完了しました！"
+            
+            self._update_status(
+                status_text,
+                color=COLORS["accent"],
+                font_size=11,
+                is_bold=True
+            )
+            
+        self._show_success()
 
     def _cancel_conversion(self):
         if self.is_converting and self.process:
@@ -2256,11 +2347,17 @@ class QuickCompressorApp:
         duration = self.video_info.get("duration", 0)
         start_time = time.time()
 
+        prefix = f"({self.current_file_index + 1}/{len(self.input_paths)}) " if len(self.input_paths) > 1 else ""
         if fallback_encoder:
-            self._update_status(f"再試行中 (H.264)... 出力: {Path(self.output_path).name}")
+            self._update_status(f"再試行中 {prefix}(H.264)... 出力: {Path(self.output_path).name}")
         else:
-            self._update_status(f"変換中... 出力: {Path(self.output_path).name}")
-        self._update_progress(0)
+            self._update_status(f"変換中... {prefix}出力: {Path(self.output_path).name}")
+        # 全体の進捗に合わせて初期値を設定
+        initial_progress = (self.current_file_index * 100) / max(1, len(self.input_paths))
+        self._update_progress(initial_progress)
+        self.taskbar_progress.set_value(int(initial_progress * 10), 1000)
+        
+        skip_finally_reset = False
 
         try:
             self.process = subprocess.Popen(
@@ -2284,24 +2381,32 @@ class QuickCompressorApp:
                     h, m, s, cs = match.groups()
                     current = int(h) * 3600 + int(m) * 60 + int(s) + int(cs) / 100
                     progress = min(current / duration * 100, 99.9)
-                    self._update_progress(progress)
+                    
+                    # バッチ全体での進捗を計算
+                    total_files = max(1, len(self.input_paths))
+                    overall_progress = (self.current_file_index * 100 + progress) / total_files
+                    
+                    self._update_progress(overall_progress)
                     
                     # タスクバー: 通常状態 (青/緑) で進捗を更新
                     self.taskbar_progress.set_state(TBPF_NORMAL)
-                    self.taskbar_progress.set_value(progress * 10, 1000)
+                    self.taskbar_progress.set_value(int(overall_progress * 10), 1000)
 
                     # 速度情報の抽出
                     speed_match = re.search(r"speed=\s*([\d.]+)x", line)
                     speed_text = f" ({speed_match.group(1)}x)" if speed_match else ""
+                    prefix = f"({self.current_file_index + 1}/{len(self.input_paths)}) " if len(self.input_paths) > 1 else ""
                     self._update_status(
-                        f"変換中... {progress:.1f}%{speed_text}  →  {Path(self.output_path).name}"
+                        f"変換中... {prefix}{progress:.1f}%{speed_text}  →  {Path(self.output_path).name}"
                     )
 
             self.process.wait()
             elapsed_time = time.time() - start_time
 
             if self.process.returncode == 0:
-                self._update_progress(100)
+                completed_progress = ((self.current_file_index + 1) * 100) / max(1, len(self.input_paths))
+                self._update_progress(completed_progress)
+                self.taskbar_progress.set_value(int(completed_progress * 10), 1000)
                 
                 # 元のファイルの「更新日時」および「アクセス日時」を引き継ぐ
                 if self.keep_metadata_var.get():
@@ -2317,7 +2422,38 @@ class QuickCompressorApp:
                 orig_size = self.video_info.get("filesize", 0)
                 
                 if orig_size > 0 and out_size > 0:
+                    saved_bytes = max(0, orig_size - out_size)
+                    self.batch_saved_bytes = getattr(self, 'batch_saved_bytes', 0) + saved_bytes
+                    self.batch_orig_bytes = getattr(self, 'batch_orig_bytes', 0) + orig_size
+                    self.batch_out_bytes = getattr(self, 'batch_out_bytes', 0) + out_size
+                    
+                    # 累計節約容量と累計変換数の保存
+                    total_saved = 0
+                    total_files = 0
+                    config_path = os.path.join(register_menu.DATA_DIR, "config.json")
+                    config_data = {}
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, "r", encoding="utf-8") as f:
+                                config_data = json.load(f)
+                                total_saved = config_data.get("total_saved_bytes", 0)
+                                total_files = config_data.get("total_converted_files", 0)
+                        except Exception:
+                            pass
+                            
+                    total_saved += saved_bytes
+                    total_files += 1
+                    config_data["total_saved_bytes"] = total_saved
+                    config_data["total_converted_files"] = total_files
+                    
+                    try:
+                        with open(config_path, "w", encoding="utf-8") as f:
+                            json.dump(config_data, f, ensure_ascii=False, indent=4)
+                    except Exception:
+                        pass
+                        
                     ratio = out_size / orig_size * 100
+                    
                     status_text = f"✅ 変換完了！  {format_filesize(orig_size)} → {format_filesize(out_size)}  ({ratio:.1f}% / 元サイズ)"
                 else:
                     status_text = f"✅ 変換完了！  {format_filesize(out_size)}"
@@ -2328,7 +2464,21 @@ class QuickCompressorApp:
                     font_size=11,
                     is_bold=True
                 )
-                self._show_success()
+                
+                self.current_file_index += 1
+                if self.current_file_index < len(self.input_paths):
+                    # 次のファイルがあれば少し待ってから実行
+                    skip_finally_reset = True
+                    self.root.after(1500, self._process_next_file)
+                    return
+                else:
+                    # 全ての処理が完了
+                    if len(self.input_paths) == 1:
+                        self.root.after(0, self._on_batch_finished)
+                    else:
+                        self.root.after(1500, self._on_batch_finished)
+                    return
+                    
             elif getattr(self, "is_cancelled", False):
                 # 中止された場合はエラーダイアログを出さずに完了処理へ
                 self._update_progress(0)
@@ -2348,6 +2498,7 @@ class QuickCompressorApp:
                             pass
                     fallback = "h264_nvenc" if current_enc == "hevc_nvenc" else "h264_amf"
                     self._update_status("H.265非対応の可能性があるため、H.264で再試行します...", color=COLORS["warning"])
+                    skip_finally_reset = True
                     self._run_ffmpeg(fallback_encoder=fallback)
                     return
 
@@ -2360,13 +2511,14 @@ class QuickCompressorApp:
             self._show_error(str(e))
 
         finally:
-            self.is_converting = False
             self.process = None
-            def _reset_btn():
-                if hasattr(self, "cancel_btn"):
-                    self.cancel_btn.pack_forget()
-                self.convert_btn.configure(state="normal", text="⚡ 圧縮開始", bg=COLORS["accent"])
-            self.root.after(0, _reset_btn)
+            if not skip_finally_reset:
+                self.is_converting = False
+                def _reset_btn():
+                    if hasattr(self, "cancel_btn"):
+                        self.cancel_btn.pack_forget()
+                    self.convert_btn.configure(state="normal", text="⚡ 圧縮開始", bg=COLORS["accent"])
+                self.root.after(0, _reset_btn)
 
     def _update_progress(self, value):
         self.root.after(0, lambda: self.progress_var.set(value))
