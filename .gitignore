@@ -33,4 +33,7 @@ scale_test.png
 iPhone互換化.bat
 
 # Debug folder
-デバッグ用/
+デバッグ用/
+
+# Binaries & AI Models
+bin/
