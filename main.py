@@ -2378,7 +2378,7 @@ class QuickCompressorApp:
         try:
             self.process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
