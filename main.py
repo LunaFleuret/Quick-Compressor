@@ -140,7 +140,7 @@ COLORS = {
     "text_dim":     "#6c757d",
     "text_bright":  "#ffffff",
     "success":      "#198754",
-    "warning":      "#e58f00",
+    "warning":      "#cc6600",
     "error":        "#dc3545",
     "border":       "#dee2e6",
     "slider_track": "#e9ecef",
@@ -568,7 +568,7 @@ class QuickCompressorApp:
 
         tk.Label(
             self.title_frame, text="⚡ Quick Compressor",
-            font=(APP_FONT, 19), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 19, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(side="left")
 
         # --- サブアクションバー (2段目) ---
@@ -579,7 +579,7 @@ class QuickCompressorApp:
         self.is_topmost = False
         self.pin_btn = tk.Button(
             self.action_frame, text="📌 最前面",
-            font=(APP_FONT, 11), fg=COLORS["text_dim"],
+            font=(APP_FONT, 11, "bold"), fg=COLORS["text_dim"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["accent"],
             relief="flat", cursor="hand2", padx=8, pady=2,
@@ -594,7 +594,7 @@ class QuickCompressorApp:
         # 設定ボタン
         settings_btn = tk.Button(
             self.action_frame, text="⚙ 設定",
-            font=(APP_FONT, 11), fg=COLORS["text_dim"],
+            font=(APP_FONT, 11, "bold"), fg=COLORS["text_dim"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["accent"],
             relief="flat", cursor="hand2", padx=8, pady=2,
@@ -606,7 +606,7 @@ class QuickCompressorApp:
         # プリセット作成ボタン
         self.preset_btn = tk.Button(
             self.action_frame, text="プリセット作成",
-            font=(APP_FONT, 11), fg=COLORS["success"],
+            font=(APP_FONT, 11, "bold"), fg=COLORS["success"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["success"],
             relief="flat", cursor="hand2", padx=8, pady=2,
@@ -617,7 +617,7 @@ class QuickCompressorApp:
 
         preset_manage_btn = tk.Button(
             self.action_frame, text="プリセット管理",
-            font=(APP_FONT, 11), fg=COLORS["accent"],
+            font=(APP_FONT, 11, "bold"), fg=COLORS["accent"],
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["accent"],
             relief="flat", cursor="hand2", padx=8, pady=2,
@@ -657,7 +657,7 @@ class QuickCompressorApp:
             widget.destroy()
         btn = tk.Button(
             self.card_frame, text="動画ファイルを選択 または ドロップ",
-            font=(APP_FONT, 12), fg=COLORS["accent"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 12, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
             activebackground=COLORS["bg_input"], activeforeground=COLORS["accent_hover"],
             relief="flat", cursor="hand2", pady=8,
             command=self._select_file
@@ -680,14 +680,14 @@ class QuickCompressorApp:
             
         tk.Label(
             header_frame, text="※クリック または ドロップで変更",
-            font=(APP_FONT, 10), fg=COLORS["accent"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 10, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
         ).pack(side="right")
         
         if hasattr(self, 'input_paths') and len(self.input_paths) > 1:
             # 複数ファイルの場合の表示
             tk.Label(
                 header_frame, text=f"📁 {len(self.input_paths)} 個のファイルが選択されています",
-                font=(APP_FONT, 12), fg=COLORS["text"], bg=COLORS["bg_card"],
+                font=(APP_FONT, 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"],
                 anchor="w"
             ).pack(side="left", fill="x", expand=True)
             
@@ -710,7 +710,7 @@ class QuickCompressorApp:
             
             tk.Label(
                 header_frame, text=f"📁 {filename}",
-                font=(APP_FONT, 12), fg=COLORS["text"], bg=COLORS["bg_card"],
+                font=(APP_FONT, 12, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"],
                 anchor="w"
             ).pack(side="left", fill="x", expand=True)
 
@@ -730,7 +730,7 @@ class QuickCompressorApp:
 
             for i, detail in enumerate(details):
                 if i > 0:
-                    tk.Label(detail_frame, text="  •  ", fg=COLORS["text_dim"],
+                    tk.Label(detail_frame, text=" | ", fg=COLORS["text_dim"],
                              bg=COLORS["bg_card"], font=(APP_FONT, 9)).pack(side="left")
                 tk.Label(detail_frame, text=detail, fg=COLORS["text_dim"],
                          bg=COLORS["bg_card"], font=(APP_FONT, 9)).pack(side="left")
@@ -839,7 +839,7 @@ class QuickCompressorApp:
         preset_apply_label_frame.pack(fill="x")
 
         tk.Label(preset_apply_label_frame, text="保存済みのプリセットを適用",
-                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left")
 
         self.apply_preset_var = tk.StringVar(value="選択してください...")
@@ -862,7 +862,7 @@ class QuickCompressorApp:
         codec_frame.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
         tk.Label(codec_frame, text="出力コーデック",
-                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
         self.codec_var = tk.StringVar(value=self._init_codec)
@@ -876,7 +876,7 @@ class QuickCompressorApp:
         fps_frame.pack(side="left", fill="x", expand=True, padx=(8, 0))
 
         tk.Label(fps_frame, text="フレームレート",
-                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
         self.fps_var = tk.StringVar(value=self._init_fps)
@@ -899,7 +899,7 @@ class QuickCompressorApp:
         resolution_frame.pack(fill="x", pady=(0, 12))
 
         tk.Label(resolution_frame, text="解像度",
-                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(anchor="w")
 
         self.resolution_var = tk.StringVar(value=self._init_resolution)
@@ -929,7 +929,7 @@ class QuickCompressorApp:
         self.resolution_warning_label = tk.Label(
             resolution_frame,
             text="",
-            font=(APP_FONT, 13), fg=COLORS["error"], bg=COLORS["bg_dark"],
+            font=(APP_FONT, 13, "bold"), fg=COLORS["error"], bg=COLORS["bg_dark"],
             justify="left"
         )
         self.resolution_warning_label.pack(anchor="w", pady=(2, 0))
@@ -943,7 +943,7 @@ class QuickCompressorApp:
         mode_frame.pack(fill="x", pady=(0, 8))
 
         tk.Label(mode_frame, text="設定モード",
-                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left", padx=(0, 12))
 
         self.mode_var = tk.StringVar(value="cq" if not self._target_size_mb else "size")
@@ -985,12 +985,12 @@ class QuickCompressorApp:
         quality_label_frame.pack(fill="x")
 
         tk.Label(quality_label_frame, text="画質 (品質優先 ← → ファイルサイズ優先)",
-                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left")
 
         self.quality_value_label = tk.Label(
             quality_label_frame, text="CQ 25 (高画質)",
-            font=(APP_FONT, 13), fg=COLORS["success"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 13, "bold"), fg=COLORS["success"], bg=COLORS["bg_dark"]
         )
         self.quality_value_label.pack(side="right")
 
@@ -1016,7 +1016,7 @@ class QuickCompressorApp:
         size_label_frame.pack(fill="x")
         
         tk.Label(size_label_frame, text="目標ファイルサイズ (MB)",
-                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left")
 
         size_input_frame = tk.Frame(self.size_frame, bg=COLORS["bg_dark"])
@@ -1048,7 +1048,7 @@ class QuickCompressorApp:
         percent_label_frame.pack(fill="x")
         
         tk.Label(percent_label_frame, text="目標ファイルサイズ割合 (%)",
-                 font=(APP_FONT, 13), fg=COLORS["text"], bg=COLORS["bg_dark"]
+                 font=(APP_FONT, 13, "bold"), fg=COLORS["text"], bg=COLORS["bg_dark"]
                  ).pack(side="left")
 
         percent_input_frame = tk.Frame(self.percent_frame, bg=COLORS["bg_dark"])
@@ -1239,7 +1239,7 @@ class QuickCompressorApp:
 
         tk.Label(
             pad, text="⚙ 詳細設定",
-            font=(APP_FONT, 15), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 15, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(anchor="w", pady=(0, 12))
 
         # --- 統計情報 ---
@@ -1281,7 +1281,7 @@ class QuickCompressorApp:
 
         tk.Label(
             preset_card, text="エンコードプリセット",
-            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"]
+            font=(APP_FONT, 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
         ).pack(anchor="w")
 
         self.preset_desc_label = tk.Label(
