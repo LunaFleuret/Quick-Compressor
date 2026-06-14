@@ -36,4 +36,7 @@ iPhone互換化.bat
 デバッグ用/
 
 # Binaries & AI Models
-bin/
+bin/
+
+# Research folder
+Research/
