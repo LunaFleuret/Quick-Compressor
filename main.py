@@ -195,6 +195,47 @@ def detect_gpu_and_default_codec() -> str:
     """初期選択のデフォルトコーデックを返す"""
     return "自動 (推奨: 環境に合わせて自動選択)"
 
+
+def send_to_recycle_bin(filepath):
+    try:
+        import ctypes
+        from ctypes.wintypes import HWND, UINT, LPCWSTR
+        FO_DELETE = 3
+        FOF_ALLOWUNDO = 0x40
+        FOF_NOCONFIRMATION = 0x0010
+
+        class SHFILEOPSTRUCTW(ctypes.Structure):
+            _fields_ = [
+                ("hwnd", HWND),
+                ("wFunc", UINT),
+                ("pFrom", LPCWSTR),
+                ("pTo", LPCWSTR),
+                ("fFlags", ctypes.c_uint16),
+                ("fAnyOperationsAborted", ctypes.c_bool),
+                ("hNameMappings", ctypes.c_void_p),
+                ("lpszProgressTitle", LPCWSTR)
+            ]
+
+        pFrom = os.path.abspath(filepath) + '\0\0'
+        shf = SHFILEOPSTRUCTW()
+        shf.hwnd = None
+        shf.wFunc = FO_DELETE
+        shf.pFrom = pFrom
+        shf.pTo = None
+        shf.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION
+        shf.fAnyOperationsAborted = False
+        shf.hNameMappings = None
+        shf.lpszProgressTitle = None
+        
+        result = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(shf))
+        return result == 0
+    except Exception:
+        try:
+            os.remove(filepath)
+            return True
+        except Exception:
+            return False
+
 def get_video_info(filepath: str) -> dict:
     """FFprobeで動画の情報を取得する"""
     cmd = [
@@ -1047,7 +1088,17 @@ class QuickCompressorApp:
             selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_dark"],
             activeforeground=COLORS["accent"],
         )
-        self.audio_check_btn.pack(anchor="w")
+        self.audio_check_btn.pack(side="left")
+
+        self.auto_delete_var = tk.BooleanVar(value=False)
+        self.auto_delete_check_btn = tk.Checkbutton(
+            audio_frame, text="変換後に元ファイルを削除",
+            variable=self.auto_delete_var,
+            font=(APP_FONT, 11), fg=COLORS["error"], bg=COLORS["bg_dark"],
+            selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_dark"],
+            activeforeground=COLORS["error"],
+        )
+        self.auto_delete_check_btn.pack(side="left", padx=(16, 0))
 
         if not self.video_info.get("has_audio"):
             self.audio_check_btn.configure(state="disabled")
@@ -1117,6 +1168,16 @@ class QuickCompressorApp:
             activeforeground=COLORS["text_bright"],
             relief="flat", padx=16, pady=8, cursor="hand2",
             command=self._open_output_folder,
+        )
+        
+        self.delete_btn = tk.Button(
+            btn_frame, text="🗑 元ファイルを削除",
+            font=(APP_FONT, 10), fg=COLORS["error"],
+            bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
+            activeforeground=COLORS["error"],
+            relief="flat", padx=16, pady=8, cursor="hand2",
+            command=self._delete_original_file,
+            highlightbackground=COLORS["error"], highlightthickness=1
         )
         # 初期状態では非表示
 
@@ -2304,6 +2365,11 @@ class QuickCompressorApp:
         self.batch_orig_bytes = 0
         self.batch_out_bytes = 0
         
+        # 成功時のボタンを非表示にし、削除ボタンを初期化
+        self.open_btn.pack_forget()
+        self.delete_btn.pack_forget()
+        self.delete_btn.configure(text="🗑 元ファイルを削除", state="normal")
+
         self.convert_btn.configure(state="disabled", text="変換中...", bg=COLORS["text_dim"])
         self.cancel_btn.pack(side="right", padx=(0, 8))
 
@@ -2346,6 +2412,16 @@ class QuickCompressorApp:
             )
             
         self._show_success()
+
+    def _delete_original_file(self):
+        success_count = 0
+        for p in getattr(self, "input_paths", []):
+            if os.path.exists(p):
+                if send_to_recycle_bin(p):
+                    success_count += 1
+                    
+        if success_count > 0:
+            self.delete_btn.configure(text="削除しました", state="disabled")
 
     def _cancel_conversion(self):
         if self.is_converting and self.process:
@@ -2411,9 +2487,25 @@ class QuickCompressorApp:
                     # 速度情報の抽出
                     speed_match = re.search(r"speed=\s*([\d.]+)x", line)
                     speed_text = f" ({speed_match.group(1)}x)" if speed_match else ""
+                    
+                    eta_text = ""
+                    if speed_match:
+                        try:
+                            speed_val = float(speed_match.group(1))
+                            if speed_val > 0.1:
+                                eta_sec = max(0, (duration - current) / speed_val)
+                                eta_m = int(eta_sec // 60)
+                                eta_s = int(eta_sec % 60)
+                                if eta_m > 0:
+                                    eta_text = f"  ⏳ 残り約 {eta_m}分{eta_s:02d}秒"
+                                else:
+                                    eta_text = f"  ⏳ 残り約 {eta_s}秒"
+                        except ValueError:
+                            pass
+
                     prefix = f"({self.current_file_index + 1}/{len(self.input_paths)}) " if len(self.input_paths) > 1 else ""
                     self._update_status(
-                        f"変換中... {prefix}{progress:.1f}%{speed_text}  →  {Path(self.output_path).name}"
+                        f"変換中... {prefix}{progress:.1f}%{speed_text}{eta_text}  →  {Path(self.output_path).name}"
                     )
 
             self.process.wait()
@@ -2433,6 +2525,11 @@ class QuickCompressorApp:
                     except Exception:
                         pass
                 
+                # 元ファイルの自動削除
+                if getattr(self, "auto_delete_var", None) and self.auto_delete_var.get():
+                    if hasattr(self, "input_path") and os.path.exists(self.input_path):
+                        send_to_recycle_bin(self.input_path)
+
                 # 出力ファイルのサイズを取得
                 out_size = os.path.getsize(self.output_path) if os.path.exists(self.output_path) else 0
                 orig_size = self.video_info.get("filesize", 0)
@@ -2506,14 +2603,23 @@ class QuickCompressorApp:
                         pass
             else:
                 current_enc = getattr(self, "current_encoder", "")
-                if elapsed_time < 2.0 and current_enc in ("hevc_nvenc", "hevc_amf") and not fallback_encoder:
+                actual_enc = fallback_encoder if fallback_encoder else current_enc
+                
+                if elapsed_time < 2.0 and actual_enc in ("av1_nvenc", "av1_amf", "hevc_nvenc", "hevc_amf"):
                     if hasattr(self, "output_path") and os.path.exists(self.output_path):
                         try:
                             os.remove(self.output_path)
                         except Exception:
                             pass
-                    fallback = "h264_nvenc" if current_enc == "hevc_nvenc" else "h264_amf"
-                    self._update_status("H.265非対応の可能性があるため、H.264で再試行します...", color=COLORS["warning"])
+                            
+                    if actual_enc in ("av1_nvenc", "av1_amf"):
+                        fallback = "hevc_nvenc" if "nvenc" in actual_enc else "hevc_amf"
+                        msg = "AV1非対応の可能性があるため、H.265(HEVC)で再試行します..."
+                    else:
+                        fallback = "h264_nvenc" if "nvenc" in actual_enc else "h264_amf"
+                        msg = "H.265非対応の可能性があるため、H.264で再試行します..."
+                        
+                    self._update_status(msg, color=COLORS["warning"])
                     skip_finally_reset = True
                     self._run_ffmpeg(fallback_encoder=fallback)
                     return
@@ -2550,6 +2656,13 @@ class QuickCompressorApp:
             style = ttk.Style()
             style.configure("Custom.Horizontal.TProgressbar", background=COLORS["success"])
             self.open_btn.pack(side="left")
+            
+            # 自動削除がオンの場合は最初から「削除しました」状態にして表示する
+            if getattr(self, "auto_delete_var", None) and self.auto_delete_var.get():
+                self.delete_btn.configure(text="削除しました", state="disabled")
+            else:
+                self.delete_btn.configure(text="🗑 元ファイルを削除", state="normal")
+            self.delete_btn.pack(side="left", padx=(8, 0))
             
             # タスクバー: 進捗表示をクリア (完了)
             self.taskbar_progress.set_state(TBPF_NOPROGRESS)
