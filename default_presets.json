@@ -5,7 +5,7 @@
         "audio_mode": "copy",
         "auto_close": false,
         "codec": "HEVC / H.265 (NVIDIA NVENC)",
-        "cq": 23,
+        "cq": 25,
         "fps": "30",
         "no_audio": false,
         "preset": "p4",
