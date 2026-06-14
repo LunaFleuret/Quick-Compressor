@@ -112,7 +112,7 @@ def get_app_dir():
 APP_DIR = get_app_dir()
 
 def load_custom_font():
-    font_path = os.path.join(APP_DIR, "りぃポップ角riipopkr", "RiiPopkkR.otf")
+    font_path = os.path.join(APP_DIR, "fonts", "RiiPopkkR.otf")
     if os.path.exists(font_path) and sys.platform == "win32":
         try:
             FR_PRIVATE = 0x10
@@ -752,8 +752,6 @@ class QuickCompressorApp:
         if getattr(self, '_drop_overlay', None) is not None and self._drop_overlay.winfo_exists():
             return event.action
             
-        print(f"[DEBUG] _on_drop_enter: {getattr(event, 'action', 'none')}")
-        
         # ToplevelではなくFrameを親の上に配置（OSのウィンドウ制御による不具合を回避）
         self._drop_overlay = tk.Frame(self.root, bg=COLORS["bg_dark"], highlightbackground=COLORS["accent"], highlightthickness=4)
         self._drop_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -772,13 +770,11 @@ class QuickCompressorApp:
         return event.action
 
     def _on_overlay_drop_leave(self, event):
-        print("[DEBUG] _on_overlay_drop_leave")
         if getattr(self, '_drop_overlay', None) is not None and self._drop_overlay.winfo_exists():
             self._drop_overlay.destroy()
             self._drop_overlay = None
 
     def _on_drop_from_overlay(self, event):
-        print("[DEBUG] _on_drop_from_overlay")
         self._on_overlay_drop_leave(None)
         self._on_drop(event)
 
