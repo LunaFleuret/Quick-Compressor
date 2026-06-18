@@ -369,6 +369,8 @@ class QuickCompressorApp:
         self.input_path = input_path
         self.current_file_index = 0
         self.batch_saved_bytes = 0
+        self._queue_data = {}  # ファイルパス → {status, progress, orig_size, out_size, settings}
+        self._selected_queue_path = None  # キューで現在選択中のファイル
         self.is_converting = False
         self.process = None
 
@@ -511,7 +513,7 @@ class QuickCompressorApp:
         
         # 警告ラベルなどのテキストが横幅を押し広げないように、現在の横幅に合わせて自動改行（wraplength）を設定
         if hasattr(self, 'resolution_warning_label'):
-            self.resolution_warning_label.configure(wraplength=w - 60)
+            self.resolution_warning_label.configure(wraplength=self.main_frame.winfo_reqwidth() - 60)
 
         # ウィンドウのどこでもドラッグ移動できるように設定
         self._enable_window_drag()
@@ -548,11 +550,21 @@ class QuickCompressorApp:
     # UI構築
     # ─────────────────────────────────────────
     def _build_ui(self):
-        # メインコンテナ (枠線用に highlightthickness を設定)
-        self.main_frame = tk.Frame(self.root, bg=COLORS["bg_dark"], padx=24, pady=20,
+        # 外側の水平コンテナ（左：設定エリア ｜ 縦セパレーター ｜ 右：バッチキュー）
+        outer_frame = tk.Frame(self.root, bg=COLORS["bg_dark"])
+        outer_frame.pack(fill="both", expand=True)
+
+        # メインコンテナ（左側・従来のUI）
+        self.main_frame = tk.Frame(outer_frame, bg=COLORS["bg_dark"], padx=24, pady=20,
                                    highlightbackground=COLORS["bg_dark"], highlightthickness=8)
-        self.main_frame.pack(fill="both", expand=True)
+        self.main_frame.pack(side="left", fill="both", expand=False)
         main_frame = self.main_frame
+
+        # 縦セパレーター
+        tk.Frame(outer_frame, bg=COLORS["border"], width=1).pack(side="left", fill="y")
+
+        # 右側：バッチキューパネル
+        self._build_queue_panel(outer_frame)
 
         # --- プリセット作成モード バナー (初期は非表示) ---
         self.preset_banner = tk.Frame(main_frame, bg=COLORS["success"], pady=12)
@@ -796,6 +808,7 @@ class QuickCompressorApp:
             return
             
         self._build_populated_file_info()
+        self._sync_queue_data()
         self._update_ui_state()
 
     def _select_file(self):
@@ -820,6 +833,7 @@ class QuickCompressorApp:
                 return
                 
             self._build_populated_file_info()
+            self._sync_queue_data()
             self._update_ui_state()
 
     def _build_settings(self, parent):
@@ -1192,6 +1206,403 @@ class QuickCompressorApp:
                     self.audio_var.set(False)
                 else:
                     self.audio_check_btn.configure(state="normal", text="音声を含める")
+
+    # ─────────────────────────────────────────
+    # バッチキューパネル
+    # ─────────────────────────────────────────
+    def _build_queue_panel(self, parent):
+        """右側バッチキューパネルの構築"""
+        self.queue_panel = tk.Frame(parent, bg=COLORS["bg_dark"])
+        self.queue_panel.pack(side="left", fill="y")
+        self.queue_panel.pack_propagate(False)
+        self.queue_panel.configure(width=232)
+
+        pad = tk.Frame(self.queue_panel, bg=COLORS["bg_dark"])
+        pad.pack(fill="both", expand=True, padx=14, pady=20)
+
+        # ヘッダー行
+        header_row = tk.Frame(pad, bg=COLORS["bg_dark"])
+        header_row.pack(fill="x", pady=(0, 10))
+
+        tk.Label(
+            header_row, text="📋 変換キュー",
+            font=(APP_FONT, 13, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+        ).pack(side="left")
+
+        self._queue_count_label = tk.Label(
+            header_row, text="",
+            font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
+        )
+        self._queue_count_label.pack(side="right")
+
+        # スクロール可能なリストエリア
+        list_container = tk.Frame(pad, bg=COLORS["bg_card"],
+                                  highlightbackground=COLORS["border"], highlightthickness=1)
+        list_container.pack(fill="both", expand=True)
+
+        self._queue_scrollbar = ttk.Scrollbar(list_container, orient="vertical")
+        self._queue_scrollbar.pack(side="right", fill="y")
+
+        self._queue_canvas = tk.Canvas(
+            list_container, bg=COLORS["bg_card"],
+            highlightthickness=0, bd=0,
+            yscrollcommand=self._queue_scrollbar.set
+        )
+        self._queue_canvas.pack(side="left", fill="both", expand=True)
+        self._queue_scrollbar.configure(command=self._queue_canvas.yview)
+
+        self._queue_inner = tk.Frame(self._queue_canvas, bg=COLORS["bg_card"])
+        self._queue_canvas_win_id = self._queue_canvas.create_window(
+            (0, 0), window=self._queue_inner, anchor="nw"
+        )
+
+        self._queue_inner.bind("<Configure>", self._on_queue_inner_configure)
+        self._queue_canvas.bind("<Configure>", self._on_queue_canvas_configure)
+
+        def _on_mousewheel(event):
+            self._queue_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        self._queue_canvas.bind("<MouseWheel>", _on_mousewheel)
+        self._queue_inner.bind("<MouseWheel>", _on_mousewheel)
+
+        # 下部サマリーラベル
+        self._queue_summary_label = tk.Label(
+            pad, text="ファイルを追加してください",
+            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_dark"],
+            justify="left", anchor="w"
+        )
+        self._queue_summary_label.pack(anchor="w", pady=(8, 0))
+
+        # ヒントラベル
+        self._queue_hint_label = tk.Label(
+            pad, text="ファイルをクリックして個別設定",
+            font=(APP_FONT, 8), fg=COLORS["text_dim"], bg=COLORS["bg_dark"],
+            justify="left", anchor="w"
+        )
+        self._queue_hint_label.pack(anchor="w", pady=(2, 0))
+
+        self._refresh_queue_display()
+
+    def _on_queue_inner_configure(self, event):
+        self._queue_canvas.configure(scrollregion=self._queue_canvas.bbox("all"))
+
+    def _on_queue_canvas_configure(self, event):
+        self._queue_canvas.itemconfig(self._queue_canvas_win_id, width=event.width)
+
+    def _sync_queue_data(self):
+        """input_paths と _queue_data を同期する"""
+        new_queue = {}
+        for path in self.input_paths:
+            if path in self._queue_data:
+                new_queue[path] = self._queue_data[path]
+            else:
+                new_queue[path] = {
+                    "status": "waiting",
+                    "progress": 0.0,
+                    "orig_size": 0,
+                    "out_size": 0,
+                    "settings": self._capture_current_settings(),  # 現在のUI設定を初期値として保存
+                }
+        self._queue_data = new_queue
+        self._refresh_queue_display()
+
+    def _refresh_queue_display(self):
+        """キューパネルの表示を全体更新する"""
+        if not hasattr(self, '_queue_inner'):
+            return
+
+        for w in self._queue_inner.winfo_children():
+            w.destroy()
+
+        self._queue_progress_bars = {}
+        self._queue_percent_labels = {}
+        selected_path = getattr(self, '_selected_queue_path', None)
+        is_converting = getattr(self, 'is_converting', False)
+
+        if not getattr(self, 'input_paths', []):
+            tk.Label(
+                self._queue_inner,
+                text="ファイルを\n追加してください",
+                font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
+                justify="center"
+            ).pack(expand=True, pady=30)
+            if hasattr(self, '_queue_count_label'):
+                self._queue_count_label.configure(text="")
+            if hasattr(self, '_queue_summary_label'):
+                self._queue_summary_label.configure(
+                    text="ファイルを追加してください", fg=COLORS["text_dim"]
+                )
+            if hasattr(self, '_queue_hint_label'):
+                self._queue_hint_label.configure(text="")
+            self._queue_canvas.configure(scrollregion=self._queue_canvas.bbox("all"))
+            return
+
+        STATUS_MAP = {
+            "waiting":    ("⏳", COLORS["text_dim"]),
+            "converting": ("⚡", COLORS["accent"]),
+            "done":       ("✅", COLORS["success"]),
+            "error":      ("❌", COLORS["error"]),
+            "cancelled":  ("✖",  COLORS["warning"]),
+        }
+
+        # 全アイテムへのクリックバインドを再帰的に設定するヘルパー
+        def _bind_click(widget, path):
+            widget.bind("<ButtonPress-1>", lambda e, p=path: self._on_queue_item_click(p), add="+")
+            if not is_converting:
+                widget.configure(cursor="hand2")
+            for child in widget.winfo_children():
+                _bind_click(child, path)
+
+        for i, path in enumerate(self.input_paths):
+            data = self._queue_data.get(path, {"status": "waiting", "progress": 0.0})
+            status = data.get("status", "waiting")
+            icon, icon_color = STATUS_MAP.get(status, ("⏳", COLORS["text_dim"]))
+            is_selected = (path == selected_path)
+
+            # 区切り線（最初以外）
+            if i > 0:
+                tk.Frame(self._queue_inner, bg=COLORS["border"], height=1).pack(
+                    fill="x", padx=6
+                )
+
+            # アイテム外側フレーム（選択時に左アクセントラインを表示）
+            outer = tk.Frame(self._queue_inner, bg=COLORS["bg_card"])
+            outer.pack(fill="x", padx=6, pady=(5, 3))
+
+            if is_selected:
+                tk.Frame(outer, bg=COLORS["accent"], width=3).pack(side="left", fill="y")
+
+            item_frame = tk.Frame(outer, bg="#eef4ff" if is_selected else COLORS["bg_card"])
+            item_frame.pack(side="left", fill="both", expand=True)
+
+            # Row 1: アイコン + ファイル名
+            row1 = tk.Frame(item_frame, bg=item_frame["bg"])
+            row1.pack(fill="x")
+
+            tk.Label(
+                row1, text=icon,
+                font=(APP_FONT, 10), fg=icon_color, bg=item_frame["bg"]
+            ).pack(side="left", padx=(4, 3))
+
+            filename = Path(path).name
+            MAX_LEN = 17
+            if len(filename) > MAX_LEN:
+                ext = Path(path).suffix
+                stem_len = MAX_LEN - len(ext) - 3
+                if stem_len > 0:
+                    filename = Path(path).stem[:stem_len] + "..." + ext
+                else:
+                    filename = filename[:MAX_LEN - 3] + "..."
+
+            name_color = COLORS["accent"] if is_selected else COLORS["text"]
+            tk.Label(
+                row1, text=filename,
+                font=(APP_FONT, 10, "bold"), fg=name_color, bg=item_frame["bg"],
+                anchor="w"
+            ).pack(side="left", fill="x", expand=True, padx=(0, 4))
+
+            # Row 2: 状態表示
+            row2 = tk.Frame(item_frame, bg=item_frame["bg"])
+            row2.pack(fill="x", padx=(20, 4), pady=(1, 3))
+
+            if status == "converting":
+                progress = data.get("progress", 0.0)
+                pb = ttk.Progressbar(
+                    row2, maximum=100, value=progress,
+                    style="Custom.Horizontal.TProgressbar"
+                )
+                pb.pack(side="left", fill="x", expand=True, padx=(0, 4))
+                pct_lbl = tk.Label(
+                    row2, text=f"{progress:.0f}%",
+                    font=(APP_FONT, 9), fg=COLORS["accent"], bg=item_frame["bg"], width=4
+                )
+                pct_lbl.pack(side="left")
+                self._queue_progress_bars[path] = pb
+                self._queue_percent_labels[path] = pct_lbl
+
+            elif status == "done":
+                orig = data.get("orig_size", 0)
+                out = data.get("out_size", 0)
+                if orig > 0 and out > 0:
+                    ratio = out / orig * 100
+                    info_text = f"{format_filesize(orig)}→{format_filesize(out)} ({ratio:.0f}%)"
+                else:
+                    info_text = "完了"
+                tk.Label(
+                    row2, text=info_text,
+                    font=(APP_FONT, 9), fg=COLORS["success"], bg=item_frame["bg"], anchor="w"
+                ).pack(fill="x")
+
+            elif status == "error":
+                tk.Label(
+                    row2, text="変換失敗",
+                    font=(APP_FONT, 9), fg=COLORS["error"], bg=item_frame["bg"], anchor="w"
+                ).pack(fill="x")
+
+            elif status == "cancelled":
+                tk.Label(
+                    row2, text="中止されました",
+                    font=(APP_FONT, 9), fg=COLORS["warning"], bg=item_frame["bg"], anchor="w"
+                ).pack(fill="x")
+
+            else:  # waiting
+                if is_selected:
+                    tk.Label(
+                        row2, text="← 左側で設定中",
+                        font=(APP_FONT, 9, "bold"), fg=COLORS["accent"], bg=item_frame["bg"], anchor="w"
+                    ).pack(fill="x")
+                else:
+                    tk.Label(
+                        row2, text="待機中",
+                        font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=item_frame["bg"], anchor="w"
+                    ).pack(fill="x")
+
+            # クリックイベントを全子ウィジェットに適用
+            _bind_click(outer, path)
+
+        # 下パディング
+        tk.Frame(self._queue_inner, bg=COLORS["bg_card"], height=4).pack()
+
+        # カウントラベル更新
+        done_c = sum(1 for d in self._queue_data.values() if d.get("status") == "done")
+        total = len(self.input_paths)
+        if hasattr(self, '_queue_count_label'):
+            self._queue_count_label.configure(text=f"{done_c}/{total}")
+
+        # サマリーラベル更新
+        if hasattr(self, '_queue_summary_label'):
+            waiting_c = sum(1 for d in self._queue_data.values() if d.get("status") == "waiting")
+            conv_c    = sum(1 for d in self._queue_data.values() if d.get("status") == "converting")
+            err_c     = sum(1 for d in self._queue_data.values() if d.get("status") in ("error", "cancelled"))
+
+            if total == 1:
+                st = self._queue_data.get(self.input_paths[0], {}).get("status", "waiting")
+                if st == "done":
+                    self._queue_summary_label.configure(text="変換完了", fg=COLORS["success"])
+                elif st == "converting":
+                    self._queue_summary_label.configure(text="変換中...", fg=COLORS["accent"])
+                elif st == "error":
+                    self._queue_summary_label.configure(text="変換失敗", fg=COLORS["error"])
+                elif st == "cancelled":
+                    self._queue_summary_label.configure(text="中止されました", fg=COLORS["warning"])
+                else:
+                    self._queue_summary_label.configure(text="", fg=COLORS["text_dim"])
+            elif conv_c > 0:
+                self._queue_summary_label.configure(
+                    text=f"変換中... {done_c}完了 / 残り {waiting_c}件",
+                    fg=COLORS["accent"]
+                )
+            elif done_c == total:
+                self._queue_summary_label.configure(
+                    text=f"すべて完了 ({total}件)", fg=COLORS["success"]
+                )
+            elif err_c > 0:
+                self._queue_summary_label.configure(
+                    text=f"{done_c}完了, {err_c}件失敗", fg=COLORS["error"]
+                )
+            else:
+                self._queue_summary_label.configure(
+                    text=f"{total}件 待機中", fg=COLORS["text_dim"]
+                )
+
+        # ヒントラベル更新
+        if hasattr(self, '_queue_hint_label'):
+            if is_converting:
+                self._queue_hint_label.configure(text="")
+            elif selected_path:
+                fname = Path(selected_path).stem[:10] + ("…" if len(Path(selected_path).stem) > 10 else "")
+                self._queue_hint_label.configure(
+                    text=f"⚙️ {fname} の設定中",
+                    fg=COLORS["accent"]
+                )
+            else:
+                self._queue_hint_label.configure(
+                    text="ファイルをクリックして個別設定",
+                    fg=COLORS["text_dim"]
+                )
+
+        self._queue_inner.update_idletasks()
+        self._queue_canvas.configure(scrollregion=self._queue_canvas.bbox("all"))
+
+    def _update_queue_item_progress(self, filepath, progress):
+        """変換中ファイルの進捗バーのみを軽量更新する"""
+        if filepath in self._queue_data:
+            self._queue_data[filepath]["progress"] = progress
+        pb = getattr(self, '_queue_progress_bars', {}).get(filepath)
+        if pb and pb.winfo_exists():
+            pb.configure(value=progress)
+        lbl = getattr(self, '_queue_percent_labels', {}).get(filepath)
+        if lbl and lbl.winfo_exists():
+            lbl.configure(text=f"{progress:.0f}%")
+
+    def _capture_current_settings(self) -> dict:
+        """現在のUI設定を辞書として取得する"""
+        s = {
+            "codec":      getattr(self, 'codec_var',      None) and self.codec_var.get(),
+            "preset":     getattr(self, 'preset_var',     None) and self.preset_var.get(),
+            "fps":        getattr(self, 'fps_var',        None) and self.fps_var.get(),
+            "resolution": getattr(self, 'resolution_var', None) and self.resolution_var.get(),
+            "mode":       getattr(self, 'mode_var',       None) and self.mode_var.get() or "cq",
+            "cq":         getattr(self, 'quality_var',    None) and self.quality_var.get() or 25,
+            "audio":      getattr(self, 'audio_var',      None) and self.audio_var.get(),
+            "audio_mode": getattr(self, 'audio_mode_var', None) and self.audio_mode_var.get() or "copy",
+            "auto_delete":getattr(self, 'auto_delete_var',None) and self.auto_delete_var.get() or False,
+        }
+        if hasattr(self, 'target_size_var'):
+            try:
+                s["target_size_mb"] = float(self.target_size_var.get())
+            except (ValueError, Exception):
+                s["target_size_mb"] = 10.0
+        if hasattr(self, 'target_percent_var'):
+            try:
+                s["target_percent"] = float(self.target_percent_var.get())
+            except (ValueError, Exception):
+                s["target_percent"] = 50.0
+        return s
+
+    def _apply_settings(self, settings: dict):
+        """設定辞書をUI変数に反映する"""
+        if not settings:
+            return
+        if settings.get("codec")      and hasattr(self, 'codec_var'):      self.codec_var.set(settings["codec"])
+        if settings.get("preset")     and hasattr(self, 'preset_var'):     self.preset_var.set(settings["preset"])
+        if settings.get("fps")        and hasattr(self, 'fps_var'):        self.fps_var.set(settings["fps"])
+        if settings.get("resolution") and hasattr(self, 'resolution_var'): self.resolution_var.set(settings["resolution"])
+        if "audio"       in settings  and hasattr(self, 'audio_var'):      self.audio_var.set(settings["audio"])
+        if "audio_mode"  in settings  and hasattr(self, 'audio_mode_var'): self.audio_mode_var.set(settings["audio_mode"])
+        if "auto_delete" in settings  and hasattr(self, 'auto_delete_var'):self.auto_delete_var.set(settings["auto_delete"])
+        if "mode"        in settings  and hasattr(self, 'mode_var'):       self.mode_var.set(settings["mode"])
+        if "cq"          in settings  and hasattr(self, 'quality_var'):
+            self.quality_var.set(settings["cq"])
+            if hasattr(self, '_on_quality_change'): self._on_quality_change(settings["cq"])
+        if "target_size_mb" in settings and hasattr(self, 'target_size_var'):
+            self.target_size_var.set(str(settings["target_size_mb"]))
+        if "target_percent" in settings and hasattr(self, 'target_percent_var'):
+            self.target_percent_var.set(str(settings["target_percent"]))
+        if hasattr(self, '_on_mode_change'):       self._on_mode_change()
+        if hasattr(self, '_on_resolution_change'): self._on_resolution_change()
+
+    def _on_queue_item_click(self, path: str):
+        """キューアイテムのクリック処理—設定の保存切替え"""
+        if getattr(self, 'is_converting', False):
+            return  # 変換中は操作不可
+
+        prev = getattr(self, '_selected_queue_path', None)
+
+        # 前の選択ファイルの設定を保存
+        if prev and prev in self._queue_data:
+            self._queue_data[prev]["settings"] = self._capture_current_settings()
+
+        if prev == path:
+            # 同じファイルを再クリック → 選択解除
+            self._selected_queue_path = None
+        else:
+            self._selected_queue_path = path
+            # 選択ファイルの設定をUIに反映
+            file_settings = self._queue_data.get(path, {}).get("settings")
+            if file_settings:
+                self._apply_settings(file_settings)
+
+        self._refresh_queue_display()
 
     # ─────────────────────────────────────────
     # 設定ダイアログ
@@ -2360,6 +2771,19 @@ class QuickCompressorApp:
         self.batch_saved_bytes = 0
         self.batch_orig_bytes = 0
         self.batch_out_bytes = 0
+
+        # 現在選択中ファイルの設定を保存
+        if self._selected_queue_path and self._selected_queue_path in self._queue_data:
+            self._queue_data[self._selected_queue_path]["settings"] = self._capture_current_settings()
+        self._selected_queue_path = None  # 変換開始時は選択を解除
+
+        # キューを全て「待機中」にリセット
+        for path in self.input_paths:
+            self._queue_data[path] = {
+                "status": "waiting", "progress": 0.0,
+                "orig_size": 0, "out_size": 0,
+            }
+        self.root.after(0, self._refresh_queue_display)
         
         # 成功時のボタンを非表示にし、削除ボタンを初期化
         self.open_btn.pack_forget()
@@ -2384,7 +2808,18 @@ class QuickCompressorApp:
             
         self.input_path = self.input_paths[self.current_file_index]
         self.video_info = get_video_info(self.input_path)
-        
+
+        # そのファイルの個別設定をUIに反映（設定がなければ現在のUIをそのまま使用）
+        file_settings = self._queue_data.get(self.input_path, {}).get("settings")
+        if file_settings:
+            self._apply_settings(file_settings)
+
+        # キュー: 現在ファイルを「変換中」に更新
+        if self.input_path in self._queue_data:
+            self._queue_data[self.input_path]["status"] = "converting"
+            self._queue_data[self.input_path]["progress"] = 0.0
+        self.root.after(0, self._refresh_queue_display)
+
         thread = threading.Thread(target=self._run_ffmpeg, daemon=True)
         thread.start()
 
@@ -2425,6 +2860,12 @@ class QuickCompressorApp:
             self.process.terminate()
             self._update_status("❌ 変換が中止されました", color=COLORS["error"])
             self.cancel_btn.pack_forget()
+
+            # キュー: 変換中・待機中のファイルを「中止」に
+            for path, data in self._queue_data.items():
+                if data.get("status") in ("converting", "waiting"):
+                    data["status"] = "cancelled"
+            self.root.after(0, self._refresh_queue_display)
 
             # タスクバー: エラー状態 (赤色) で中止を表示
             self.taskbar_progress.set_state(TBPF_ERROR)
@@ -2480,6 +2921,10 @@ class QuickCompressorApp:
                     self.taskbar_progress.set_state(TBPF_NORMAL)
                     self.taskbar_progress.set_value(int(overall_progress * 10), 1000)
 
+                    # キューパネル: 個別ファイルの進捗を軽量更新
+                    _fp = self.input_path
+                    self.root.after(0, lambda p=progress, fp=_fp: self._update_queue_item_progress(fp, p))
+
                     # 速度情報の抽出
                     speed_match = re.search(r"speed=\s*([\d.]+)x", line)
                     speed_text = f" ({speed_match.group(1)}x)" if speed_match else ""
@@ -2529,7 +2974,16 @@ class QuickCompressorApp:
                 # 出力ファイルのサイズを取得
                 out_size = os.path.getsize(self.output_path) if os.path.exists(self.output_path) else 0
                 orig_size = self.video_info.get("filesize", 0)
-                
+
+                # キュー: 完了ステータスに更新
+                _done_path = self.input_path
+                if _done_path in self._queue_data:
+                    self._queue_data[_done_path].update({
+                        "status": "done", "progress": 100.0,
+                        "orig_size": orig_size, "out_size": out_size,
+                    })
+                self.root.after(0, self._refresh_queue_display)
+
                 if orig_size > 0 and out_size > 0:
                     saved_bytes = max(0, orig_size - out_size)
                     self.batch_saved_bytes = getattr(self, 'batch_saved_bytes', 0) + saved_bytes
@@ -2622,6 +3076,10 @@ class QuickCompressorApp:
 
                 stderr_out = self.process.stderr.read() if self.process.stderr else ""
                 self._update_status(f"❌ 変換失敗 (コード: {self.process.returncode})", color=COLORS["error"])
+                # キュー: エラーステータスに更新
+                if self.input_path in self._queue_data:
+                    self._queue_data[self.input_path]["status"] = "error"
+                self.root.after(0, self._refresh_queue_display)
                 self._show_error(f"FFmpegがエラーで終了しました。\n\n終了コード: {self.process.returncode}")
 
         except Exception as e:

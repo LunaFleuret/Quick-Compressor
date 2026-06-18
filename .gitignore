@@ -39,4 +39,7 @@ iPhone互換化.bat
 bin/
 
 # Research folder
-Research/
+Research/
+
+# Code map for AI / developers (local reference only)
+CODE_MAP.md
