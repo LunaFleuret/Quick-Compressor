@@ -4,7 +4,7 @@
 
 Discord（10MB）や、Steam Chat（30MB）など、極めて小さいファイル制限向けの圧縮ソフト。
 
-![Quick Compressor](images/screenshot.png)
+![Quick Compressor](images/screenshot.png?t=20260619)
 
 ---
 
