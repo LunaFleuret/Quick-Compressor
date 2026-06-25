@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+#必要ライブラリのインポート
 import sys
 import os
 import json
@@ -18,24 +19,24 @@ from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 import register_menu
 
+#ドラッグアンドドロップ用ライブラリ try:～except:でエラー回避
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
     HAS_DND = True
 except ImportError:
     HAS_DND = False
 
-# ─────────────────────────────────────────────
 # タスクバー進捗表示用 (Windows API)
-# ─────────────────────────────────────────────
 import ctypes
 from ctypes import wintypes
 
 TBPF_NOPROGRESS = 0
-TBPF_INDETERMINATE = 1  # 準備 (緑のアニメーション)
+TBPF_INDETERMINATE = 1  # 準備 (緑)
 TBPF_NORMAL = 2         # 通常 (システム設定色, デフォルトで緑または青)
 TBPF_ERROR = 4          # エラー (赤)
 TBPF_PAUSED = 8         # 一時停止 (黄)
 
+#プログレスバーをpythonから操作
 try:
     import comtypes.client
     from comtypes import GUID, IUnknown, COMMETHOD, HRESULT
@@ -59,6 +60,8 @@ try:
 except ImportError:
     has_taskbar_api = False
 
+
+#Windowsタスクバーのアイコン部分に進捗バーや状態（カラー）を表示するための制御クラス
 class TaskbarProgress:
     def __init__(self, tk_root):
         self.root = tk_root
@@ -94,16 +97,13 @@ class TaskbarProgress:
         if hasattr(self, 'root') and self.root:
             self.root.after(0, _do)
 
-# ─────────────────────────────────────────────
+
 # バージョン情報とリポジトリ設定
-# ─────────────────────────────────────────────
-# バージョン情報（アプリのタイトルやアップデートチェックに使用）
+# バージョン情報から
 CURRENT_VERSION = "2.0.1"
 GITHUB_REPO = "LunaFleuret/Quick-Compressor"
 
-# ─────────────────────────────────────────────
 # 定数とパス解決
-# ─────────────────────────────────────────────
 def get_app_dir():
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
