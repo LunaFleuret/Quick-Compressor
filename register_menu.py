@@ -79,6 +79,81 @@ def is_amd_gpu():
     except:
         return False
 
+
+def migrate_presets_gpu():
+    """
+    再インストール（--register 実行）時に既存の presets.json 内のGPUコーデック設定を
+    現在検出されたGPU環境（NVIDIA NVENC / AMD AMF）に合わせて自動書き換えする。
+    ユーザーが作成したカスタムプリセットのみを対象とし、デフォルトプリセットは
+    常に実行時に動的置換されるため対象外。
+    変更がある場合のみバックアップ（presets.json.gpu_bak）を作成して上書き保存する。
+    """
+    import shutil
+
+    presets_path = os.path.join(DATA_DIR, "presets.json")
+    if not os.path.exists(presets_path):
+        # presets.json が存在しない（初回インストール等）は何もしない
+        return
+
+    amd = is_amd_gpu()
+
+    # コーデック表示名の変換マッピング
+    if amd:
+        codec_from = "NVIDIA NVENC"
+        codec_to   = "AMD AMF"
+        # NVENC プリセット (p1〜p7) → AMF プリセット へのマッピング
+        preset_map = {
+            "p1": "speed",
+            "p2": "speed",
+            "p3": "speed",
+            "p4": "balanced",
+            "p5": "quality",
+            "p6": "quality",
+            "p7": "quality",
+        }
+    else:
+        codec_from = "AMD AMF"
+        codec_to   = "NVIDIA NVENC"
+        # AMF プリセット → NVENC プリセット へのマッピング
+        preset_map = {
+            "speed":    "p2",
+            "balanced": "p4",
+            "quality":  "p6",
+        }
+
+    try:
+        with open(presets_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return  # 読み込みに失敗した場合は何もしない
+
+    changed = False
+    for uid, preset in data.items():
+        # コーデック名（表示文字列）を置換
+        codec_val = preset.get("codec", "")
+        if isinstance(codec_val, str) and codec_from in codec_val:
+            preset["codec"] = codec_val.replace(codec_from, codec_to)
+            changed = True
+
+        # プリセット値を変換（対象キーがマッピングに存在する場合のみ）
+        preset_val = preset.get("preset", "")
+        if isinstance(preset_val, str) and preset_val in preset_map:
+            preset["preset"] = preset_map[preset_val]
+            changed = True
+
+    if not changed:
+        return  # 変更なし → 何もしない
+
+    try:
+        # バックアップを作成してから上書き保存
+        shutil.copy2(presets_path, presets_path + ".gpu_bak")
+        with open(presets_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        print(f"[migrate_presets_gpu] プリセットを {codec_from} → {codec_to} に変換しました。")
+    except Exception as e:
+        print(f"[migrate_presets_gpu] 保存失敗: {e}")
+
+
 def load_all_presets():
     presets_path = os.path.join(DATA_DIR, "presets.json")
     default_path = os.path.join(APP_DIR, "default_presets.json")
@@ -523,6 +598,8 @@ def main():
     if len(sys.argv) > 1:
         arg = sys.argv[1].lower()
         if arg in ("--register", "-r"):
+            # GPU変更に備えて、既存プリセットのコーデック設定を現在のGPUへ自動マイグレーション
+            migrate_presets_gpu()
             registered, errors = register_context_menu()
             print(f"登録完了: {', '.join(registered)}")
             if errors:

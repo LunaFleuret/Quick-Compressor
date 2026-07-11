@@ -100,7 +100,7 @@ class TaskbarProgress:
 
 # バージョン情報とリポジトリ設定
 # バージョン情報から
-CURRENT_VERSION = "2.0.1"
+CURRENT_VERSION = "2.1.0"
 GITHUB_REPO = "LunaFleuret/Quick-Compressor"
 
 # 定数とパス解決
@@ -1869,6 +1869,87 @@ class QuickCompressorApp:
             font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
         ).pack(anchor="w", padx=24, pady=(0, 6))
 
+        # --- プリセットコーデック一括変更 ---
+        bulk_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
+                             highlightbackground=COLORS["border"], highlightthickness=1)
+        bulk_card.pack(fill="x", pady=(0, 10))
+
+        tk.Label(
+            bulk_card, text="プリセットのコーデックを一括変更",
+            font=(APP_FONT, 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
+        ).pack(anchor="w")
+
+        tk.Label(
+            bulk_card,
+            text="カスタムプリセット全件の出力コーデックを変更します。\n（デフォルトプリセットは変更されません）",
+            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
+            justify="left"
+        ).pack(anchor="w", pady=(2, 6))
+
+        # 「自動」を除いたコーデック一覧を選択肢として提示
+        bulk_codec_choices = [k for k in CODECS.keys() if CODECS[k]["encoder"] != "auto"]
+        bulk_codec_var = tk.StringVar(value=bulk_codec_choices[0])
+
+        bulk_row = tk.Frame(bulk_card, bg=COLORS["bg_card"])
+        bulk_row.pack(anchor="w", fill="x")
+
+        ttk.Combobox(
+            bulk_row, textvariable=bulk_codec_var,
+            values=bulk_codec_choices, state="readonly",
+            font=(APP_FONT, 10), width=30
+        ).pack(side="left", padx=(0, 8))
+
+        tk.Button(
+            bulk_row, text="一括変更する",
+            font=(APP_FONT, 10, "bold"), fg=COLORS["text_bright"],
+            bg=COLORS["warning"], activebackground="#aa5500",
+            activeforeground=COLORS["text_bright"],
+            relief="flat", padx=14, pady=4, cursor="hand2",
+            command=lambda: self._batch_update_preset_codecs(bulk_codec_var.get(), win)
+        ).pack(side="left")
+
+        # --- デフォルトプリセットのコーデック種別 ---
+        default_codec_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
+                                      highlightbackground=COLORS["border"], highlightthickness=1)
+        default_codec_card.pack(fill="x", pady=(0, 10))
+
+        tk.Label(
+            default_codec_card, text="デフォルトプリセットのコーデック種別",
+            font=(APP_FONT, 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
+        ).pack(anchor="w")
+
+        tk.Label(
+            default_codec_card,
+            text="Discord・ Steam・Xなどのデフォルトプリセットが使うコーデックを一括変更します。\n"
+            "（ファイルを変更せず、起動時に動的に変換するため再インストールしても設定が保持されます）",
+            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
+            justify="left"
+        ).pack(anchor="w", pady=(2, 6))
+
+        # config.json から現在の設定を読む
+        _config_path = os.path.join(register_menu.DATA_DIR, "config.json")
+        _current_dc_type = "HEVC"
+        if os.path.exists(_config_path):
+            try:
+                with open(_config_path, "r", encoding="utf-8") as f:
+                    _current_dc_type = json.load(f).get("default_codec_type", "HEVC")
+            except Exception:
+                pass
+
+        default_codec_type_var = tk.StringVar(value=_current_dc_type)
+
+        dc_row = tk.Frame(default_codec_card, bg=COLORS["bg_card"])
+        dc_row.pack(anchor="w", pady=(0, 4))
+
+        for label, val in [("HEVC / H.265 (推奨)", "HEVC"), ("AV1 (容量最小)", "AV1"), ("H.264 (互換性最大)", "H.264")]:
+            tk.Radiobutton(
+                dc_row, text=label, variable=default_codec_type_var, value=val,
+                font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"],
+                selectcolor=COLORS["bg_card"], activebackground=COLORS["bg_card"],
+                activeforeground=COLORS["accent"],
+                command=lambda: self._save_default_codec_type(default_codec_type_var.get())
+            ).pack(side="left", padx=(0, 12))
+
         # 閉じるボタン
         close_btn = tk.Button(
             pad, text="閉じる",
@@ -1909,6 +1990,120 @@ class QuickCompressorApp:
         try:
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
+
+    # ─────────────────────────────────────────
+    # プリセットコーデック一括変更
+    # ─────────────────────────────────────────
+    def _batch_update_preset_codecs(self, target_codec_name: str, parent_win=None):
+        """カスタムプリセット全件のコーデックを一括で変更する"""
+        if target_codec_name not in CODECS:
+            return
+
+        parent = parent_win or self.root
+
+        # 確認ダイアログ
+        if not messagebox.askyesno(
+            "確認",
+            f"すべてのカスタムプリセットの出力コーデックを\n「{target_codec_name}」に変更します。\n\n"
+            f"※デフォルトプリセットは変更されません。\nよろしいですか？",
+            parent=parent
+        ):
+            return
+
+        presets_path = os.path.join(register_menu.DATA_DIR, "presets.json")
+        if not os.path.exists(presets_path):
+            messagebox.showinfo("情報", "変更するカスタムプリセットがありません。", parent=parent)
+            return
+
+        try:
+            with open(presets_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            messagebox.showerror("エラー", f"プリセットの読み込みに失敗しました:\n{e}", parent=parent)
+            return
+
+        target_encoder = CODECS[target_codec_name]["encoder"]
+        target_is_amf  = "amf"   in target_encoder
+        target_is_nvenc = "nvenc" in target_encoder
+
+        # プリセット値の変換マッピング
+        nvenc_to_amf = {
+            "p1": "speed", "p2": "speed", "p3": "speed",
+            "p4": "balanced",
+            "p5": "quality", "p6": "quality", "p7": "quality",
+        }
+        amf_to_nvenc = {"speed": "p2", "balanced": "p4", "quality": "p6"}
+
+        changed_count = 0
+        for uid, preset in data.items():
+            # is_custom=False のデフォルトプリセットは対象外
+            if not preset.get("is_custom", True):
+                continue
+
+            old_codec = preset.get("codec", "")
+            old_is_amf   = "amf"   in old_codec.lower()
+            old_is_nvenc = "nvenc" in old_codec.lower()
+
+            preset["codec"] = target_codec_name
+
+            # エンコーダー系統が変わる場合、preset 値も変換する
+            preset_val = preset.get("preset", "")
+            if isinstance(preset_val, str):
+                if target_is_amf and old_is_nvenc:
+                    # NVENC p1-p7 → AMF speed/balanced/quality
+                    preset["preset"] = nvenc_to_amf.get(preset_val.lower(), "balanced")
+                elif target_is_nvenc and old_is_amf:
+                    # AMF speed/balanced/quality → NVENC p2/p4/p6
+                    preset["preset"] = amf_to_nvenc.get(preset_val.lower(), "p4")
+
+            changed_count += 1
+
+        if changed_count == 0:
+            messagebox.showinfo("情報", "変更するカスタムプリセットが見つかりませんでした。", parent=parent)
+            return
+
+        try:
+            with open(presets_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            messagebox.showerror("エラー", f"プリセットの保存に失敗しました:\n{e}", parent=parent)
+            return
+
+        # 右クリックメニューとメイン画面のプリセットリストを更新
+        try:
+            register_menu.register_context_menu()
+        except Exception:
+            pass
+        self._update_apply_preset_list()
+
+        messagebox.showinfo(
+            "完了",
+            f"{changed_count} 件のカスタムプリセットのコーデックを\n「{target_codec_name}」に変更しました。",
+            parent=parent
+        )
+
+    def _save_default_codec_type(self, codec_type: str):
+        """config.json に default_codec_type を保存し、プリセットリストを更新する"""
+        config_path = os.path.join(register_menu.DATA_DIR, "config.json")
+        config = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            except Exception:
+                pass
+        config["default_codec_type"] = codec_type
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
+        # プリセットリストと右クリックメニューを即時更新
+        self._update_apply_preset_list()
+        try:
+            register_menu.register_context_menu()
         except Exception:
             pass
 
@@ -2076,7 +2271,7 @@ class QuickCompressorApp:
             self.output_path = str(input_p.parent / f"{input_p.stem}_converted_{counter}.{ext}")
             counter += 1
 
-        # GPU最適化: 入力コーデックに対応するCUVIDデコーダーで読み込み高速化
+        # GPU最適化: 入力コーデックに対応するデコーダーで読み込み高速化
         is_nvenc = "nvenc" in encoder
         is_amf = "amf" in encoder
 
@@ -2097,8 +2292,14 @@ class QuickCompressorApp:
                                "-c:v", cuvid_decoder])
             else:
                 cmd.extend(["-hwaccel", "auto"])
-        
-            
+
+        elif is_amf:
+            # AMD: d3d11va（DirectX 11）ハードウェアデコードでGPU使用率を向上させる
+            # CPUデコード → GPU転送のボトルネックを解消し、Video Codec Engineを有効活用する
+            # ※ d3d11va はデコード後フレームをシステムメモリに戻すため、
+            #   use_gpu_decode は False のまま（-pix_fmt yuv420p が必要）
+            cmd.extend(["-hwaccel", "d3d11va"])
+
         cmd.extend(["-i", self.input_path])
 
         # ビデオ設定
@@ -2180,8 +2381,10 @@ class QuickCompressorApp:
                     ])
                 elif is_amf:
                     # AMD AMF のVBR上限ロック付き画質設定
+                    # av1_amf は vbr_peak 非対応のため vbr を使用
+                    amf_rc = "vbr" if encoder == "av1_amf" else "vbr_peak"
                     cmd.extend([
-                        "-rc", "vbr_peak",
+                        "-rc", amf_rc,
                         "-qp_p", str(cq),
                         "-qp_i", str(cq),
                         "-maxrate", f"{orig_video_kbps}k",
@@ -2197,7 +2400,7 @@ class QuickCompressorApp:
                     # AMD AMF の固定画質設定 (CQモード)
                     cmd.extend(["-rc", "cqp", "-qp_p", str(cq), "-qp_i", str(cq)])
 
-        # NVENC プリセット（設定ダイアログから取得）
+        # AMF / NVENC プリセット（設定ダイアログから取得）
         preset_val = self.preset_var.get()
         if is_amf:
             amf_preset = "balanced"
@@ -2207,7 +2410,14 @@ class QuickCompressorApp:
                 amf_preset = "quality"
             elif preset_val.lower() in ("p4", "balanced"):
                 amf_preset = "balanced"
+            # av1_amf: quality プリセットは look-ahead が重くGPU/CPU使用率が低下するため
+            # balanced に抑えてスループットを確保する
+            if encoder == "av1_amf" and amf_preset == "quality":
+                amf_preset = "balanced"
             cmd.extend(["-preset", amf_preset])
+            # av1_amf 固有: ファイルエンコードモードを明示してGPU使用率を向上
+            if encoder == "av1_amf":
+                cmd.extend(["-usage", "transcoding"])
         else:
             cmd.extend(["-preset", preset_val.lower()])
 
@@ -2304,6 +2514,41 @@ class QuickCompressorApp:
                 fg=COLORS["success"],
                 activeforeground=COLORS["success"]
             )
+
+    def _get_default_presets(self):
+        default_path = os.path.join(register_menu.APP_DIR, "default_presets.json")
+        default_presets = {}
+        if os.path.exists(default_path):
+            try:
+                with open(default_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                # ① GPU ブランド置換（NVIDIA NVENC → AMD AMF）
+                if register_menu.is_amd_gpu():
+                    content = content.replace("NVIDIA NVENC", "AMD AMF")
+
+                # ② コーデック種別置換（config.json の設定に従う）
+                #    "HEVC / H.265 (〇〇)" を "AV1 (〇〇)" や "H.264 (〇〇)" へ動的に変換する
+                config_path = os.path.join(register_menu.DATA_DIR, "config.json")
+                default_codec_type = "HEVC"  # デフォルトは変換なし
+                if os.path.exists(config_path):
+                    try:
+                        with open(config_path, "r", encoding="utf-8") as f:
+                            cfg = json.load(f)
+                            default_codec_type = cfg.get("default_codec_type", "HEVC")
+                    except Exception:
+                        pass
+
+                if default_codec_type == "AV1":
+                    content = content.replace("HEVC / H.265", "AV1")
+                elif default_codec_type == "H.264":
+                    content = content.replace("HEVC / H.265", "H.264")
+                # "HEVC" の場合は変換なし（デフォルトのまま）
+
+                default_presets = json.loads(content)
+            except Exception:
+                pass
+        return default_presets
 
     # ─────────────────────────────────────────
     # プリセット管理ダイアログ
@@ -2512,21 +2757,6 @@ class QuickCompressorApp:
             self._on_mode_change()
             self._on_resolution_change()
 
-    def _get_default_presets(self):
-        default_path = os.path.join(register_menu.APP_DIR, "default_presets.json")
-        default_presets = {}
-        if os.path.exists(default_path):
-            try:
-                with open(default_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                
-                if register_menu.is_amd_gpu():
-                    content = content.replace("NVIDIA NVENC", "AMD AMF")
-                    
-                default_presets = json.loads(content)
-            except Exception:
-                pass
-        return default_presets
 
     def _get_user_presets(self):
         presets_path = os.path.join(register_menu.DATA_DIR, "presets.json")
@@ -2766,6 +2996,7 @@ class QuickCompressorApp:
             return
         self.is_converting = True
         self.is_cancelled = False
+        self._batch_start_time = time.time()  # バッチ全体の開始時刻を記録
         
         self.current_file_index = 0
         self.batch_saved_bytes = 0
@@ -2829,11 +3060,24 @@ class QuickCompressorApp:
             out_total = getattr(self, 'batch_out_bytes', 0)
             saved = getattr(self, 'batch_saved_bytes', 0)
             
+            # バッチ全体の経過時間
+            batch_elapsed = int(time.time() - getattr(self, '_batch_start_time', time.time()))
+            if batch_elapsed < 60:
+                batch_elapsed_str = f"{batch_elapsed}秒"
+            else:
+                batch_elapsed_str = f"{batch_elapsed // 60}分{batch_elapsed % 60:02d}秒"
+            
             if orig_total > 0 and out_total > 0:
                 ratio = out_total / orig_total * 100
-                status_text = f"✅ {len(self.input_paths)} 個すべての変換完了！ {format_filesize(orig_total)} → {format_filesize(out_total)} ({ratio:.1f}% / 元サイズ)"
+                status_text = (
+                    f"✅ {len(self.input_paths)} 個すべての変換完了！"
+                    f" {format_filesize(orig_total)} → {format_filesize(out_total)}"
+                    f" ({ratio:.1f}% / 元サイズ)  ⏱ {batch_elapsed_str}"
+                )
             else:
-                status_text = f"✅ {len(self.input_paths)} 個すべての変換が完了しました！"
+                status_text = (
+                    f"✅ {len(self.input_paths)} 個すべての変換が完了しました！  ⏱ {batch_elapsed_str}"
+                )
             
             self._update_status(
                 status_text,
@@ -2910,13 +3154,13 @@ class QuickCompressorApp:
                     h, m, s, cs = match.groups()
                     current = int(h) * 3600 + int(m) * 60 + int(s) + int(cs) / 100
                     progress = min(current / duration * 100, 99.9)
-                    
+
                     # バッチ全体での進捗を計算
                     total_files = max(1, len(self.input_paths))
                     overall_progress = (self.current_file_index * 100 + progress) / total_files
-                    
+
                     self._update_progress(overall_progress)
-                    
+
                     # タスクバー: 通常状態 (青/緑) で進捗を更新
                     self.taskbar_progress.set_state(TBPF_NORMAL)
                     self.taskbar_progress.set_value(int(overall_progress * 10), 1000)
@@ -3017,9 +3261,21 @@ class QuickCompressorApp:
                         
                     ratio = out_size / orig_size * 100
                     
-                    status_text = f"✅ 変換完了！  {format_filesize(orig_size)} → {format_filesize(out_size)}  ({ratio:.1f}% / 元サイズ)"
+                    # 経過時間フォーマット
+                    el = int(elapsed_time)
+                    if el < 60:
+                        elapsed_str = f"{el}秒"
+                    else:
+                        elapsed_str = f"{el // 60}分{el % 60:02d}秒"
+                    
+                    status_text = (
+                        f"✅ 変換完了！  {format_filesize(orig_size)} → {format_filesize(out_size)}"
+                        f"  ({ratio:.1f}% / 元サイズ)  ⏱ {elapsed_str}"
+                    )
                 else:
-                    status_text = f"✅ 変換完了！  {format_filesize(out_size)}"
+                    el = int(elapsed_time)
+                    elapsed_str = f"{el // 60}分{el % 60:02d}秒" if el >= 60 else f"{el}秒"
+                    status_text = f"✅ 変換完了！  {format_filesize(out_size)}  ⏱ {elapsed_str}"
                     
                 self._update_status(
                     status_text,
