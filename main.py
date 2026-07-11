@@ -382,12 +382,6 @@ class QuickCompressorApp:
         self.root.configure(bg=COLORS["bg_dark"])
         self.root.resizable(False, False)
 
-        # DPI対応
-        try:
-            from ctypes import windll
-            windll.shcore.SetProcessDpiAwareness(1)
-        except Exception:
-            pass
 
         # 動画情報を取得
         if self.input_path:
@@ -3506,6 +3500,18 @@ def main():
         messagebox.showerror("エラー", f"ファイルが見つかりません:\n{filepath}")
         sys.exit(1)
 
+
+    # DPI対応をウィンドウ生成前に適用 (高DPI環境での黒枠描画バグ対策)
+    try:
+        import ctypes
+        # Windows 10 v1703 以降推奨の Per-Monitor V2 を設定
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(-4)
+    except Exception:
+        try:
+            # 古い Windows 向けの System DPI Aware 設定
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            pass
 
     if HAS_DND:
         root = TkinterDnD.Tk()
