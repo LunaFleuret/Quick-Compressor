@@ -42,4 +42,7 @@ bin/
 Research/
 
 # Code map for AI / developers (local reference only)
-CODE_MAP.md
+CODE_MAP.md
+
+# Archive folder
+archive/
