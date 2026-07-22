@@ -32,9 +32,17 @@ if not exist "dist\bin\ffmpeg.exe" (
 
 echo.
 echo [4] Inno Setup によるインストーラーの作成...
-set ISCC="C:\Users\Raika\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
-if not exist %ISCC% set ISCC="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-if not exist %ISCC% set ISCC="C:\Program Files\Inno Setup 6\ISCC.exe"
+set ISCC=
+where ISCC.exe >nul 2>nul
+if %ERRORLEVEL% equ 0 (
+    set ISCC=ISCC.exe
+) else if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" (
+    set ISCC="%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
+) else if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" (
+    set ISCC="%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
+) else if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" (
+    set ISCC="%ProgramFiles%\Inno Setup 6\ISCC.exe"
+)
 
 if exist %ISCC% (
     %ISCC% build_installer.iss
