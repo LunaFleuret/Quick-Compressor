@@ -19,17 +19,42 @@ from tkinter import messagebox
 # ユーティリティ
 # ─────────────────────────────────────────────
 def get_app_dir():
+    """アプリケーション実行階層を取得"""
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
-def get_data_dir():
+def get_resource_path(relative_path):
+    """
+    リソースファイルのパスを取得（二段構え探索構造）
+    1. PyInstaller Exe 同階層 (os.path.dirname(sys.executable))
+    2. Temp ディレクトリ (_MEIPASS)
+    3. スクリプト同階層
+    """
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(sys.executable)
+        exe_path = os.path.join(exe_dir, relative_path)
+        if os.path.exists(exe_path):
+            return exe_path
+        
+        meipass_dir = getattr(sys, '_MEIPASS', exe_dir)
+        meipass_path = os.path.join(meipass_dir, relative_path)
+        if os.path.exists(meipass_path):
+            return meipass_path
+        
+        return exe_path
+    else:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(script_dir, relative_path)
+
+def get_data_dir(create=True):
     r"""設定ファイルの保存先 (%APPDATA%\QuickCompressor)"""
     appdata = os.environ.get('APPDATA')
     if not appdata:
         appdata = os.path.expanduser('~')
     d = os.path.join(appdata, "QuickCompressor")
-    os.makedirs(d, exist_ok=True)
+    if create:
+        os.makedirs(d, exist_ok=True)
     return d
 
 # ─────────────────────────────────────────────
@@ -47,8 +72,8 @@ VIDEO_EXTENSIONS = [
 ]
 
 APP_DIR = get_app_dir()
-DATA_DIR = get_data_dir()
-MAIN_SCRIPT = os.path.join(APP_DIR, "main.py")
+DATA_DIR = get_data_dir(create=False)
+MAIN_SCRIPT = get_resource_path("main.py")
 
 # 実行コマンドのベース部分（.exe化されているか判定）
 IS_FROZEN = getattr(sys, 'frozen', False)
@@ -68,16 +93,71 @@ REG_ROOT_PATH = r"Software\Classes"
 
 
 def is_amd_gpu():
+    import subprocess
+    # 1. PowerShell Get-CimInstance (Windows 11 / 10)
     try:
-        import subprocess
+        cmd = ["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"]
+        output = subprocess.check_output(cmd, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=4)
+        if output:
+            upper_output = output.upper()
+            # NVIDIA ディスクリート GPU が存在する場合は最優先 (False)
+            if "NVIDIA" in upper_output:
+                return False
+            # NVIDIA が無く AMD / RADEON が存在する場合のみ True
+            if "AMD" in upper_output or "RADEON" in upper_output:
+                return True
+    except Exception:
+        pass
+
+    # 2. wmic (旧Windows環境)
+    try:
         output = subprocess.check_output(
             ["wmic", "path", "win32_VideoController", "get", "name"], 
             text=True, 
-            creationflags=subprocess.CREATE_NO_WINDOW
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            timeout=3
         )
-        return "AMD" in output.upper() or "RADEON" in output.upper()
-    except:
-        return False
+        if output:
+            upper_output = output.upper()
+            if "NVIDIA" in upper_output:
+                return False
+            if "AMD" in upper_output or "RADEON" in upper_output:
+                return True
+    except Exception:
+        pass
+
+    # 3. レジストリ・フォールバック
+    try:
+        key_path = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+        has_nvidia = False
+        has_amd = False
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as k:
+            i = 0
+            while True:
+                try:
+                    subkey_name = winreg.EnumKey(k, i)
+                    i += 1
+                    with winreg.OpenKey(k, subkey_name) as sk:
+                        try:
+                            val, _ = winreg.QueryValueEx(sk, "DriverDesc")
+                            if val:
+                                upper_val = str(val).upper()
+                                if "NVIDIA" in upper_val:
+                                    has_nvidia = True
+                                elif "AMD" in upper_val or "RADEON" in upper_val:
+                                    has_amd = True
+                        except Exception:
+                            pass
+                except OSError:
+                    break
+        if has_nvidia:
+            return False
+        if has_amd:
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 def migrate_presets_gpu():
@@ -122,7 +202,7 @@ def migrate_presets_gpu():
         }
 
     try:
-        with open(presets_path, "r", encoding="utf-8") as f:
+        with open(presets_path, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
     except Exception:
         return  # 読み込みに失敗した場合は何もしない
@@ -155,8 +235,9 @@ def migrate_presets_gpu():
 
 
 def load_all_presets():
+    get_data_dir(create=True)
     presets_path = os.path.join(DATA_DIR, "presets.json")
-    default_path = os.path.join(APP_DIR, "default_presets.json")
+    default_path = get_resource_path("default_presets.json")
     
     all_presets = {}
     default_presets = {}
@@ -164,7 +245,7 @@ def load_all_presets():
     # 1. デフォルトプリセットを読み込む
     if os.path.exists(default_path):
         try:
-            with open(default_path, "r", encoding="utf-8") as f:
+            with open(default_path, "r", encoding="utf-8-sig") as f:
                 content = f.read()
                 
             if is_amd_gpu():
@@ -179,7 +260,7 @@ def load_all_presets():
     presets = {}
     if os.path.exists(presets_path):
         try:
-            with open(presets_path, "r", encoding="utf-8") as f:
+            with open(presets_path, "r", encoding="utf-8-sig") as f:
                 presets = json.load(f)
                 for k, v in presets.items():
                     if "name" not in v:
@@ -192,7 +273,7 @@ def load_all_presets():
     hide_no_audio = False
     if os.path.exists(config_path):
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, "r", encoding="utf-8-sig") as f:
                 config = json.load(f)
                 hide_no_audio = bool(config.get("hide_no_audio_presets", False))
         except Exception:
@@ -210,6 +291,7 @@ def load_all_presets():
 
 def register_context_menu():
     """右クリックメニューに登録（HKCU - 管理者権限不要）"""
+    get_data_dir(create=True)
     # メニューの重複を防ぐため、一度既存の登録をクリアする
     unregister_context_menu()
     
@@ -220,7 +302,7 @@ def register_context_menu():
     force_auto_close = True
     if os.path.exists(config_path):
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, "r", encoding="utf-8-sig") as f:
                 config = json.load(f)
                 if "force_auto_close_on_right_click" in config:
                     force_auto_close = bool(config["force_auto_close_on_right_click"])
@@ -338,6 +420,32 @@ def register_context_menu():
     return registered, errors
 
 
+def delete_key_recursive(root_key, subkey_path, max_depth=100):
+    """レジストリキーおよびすべてのサブキーを再帰的に削除（EnumKey全件配列化＋上限で無限ループ防止）"""
+    if max_depth <= 0:
+        return
+    try:
+        subkeys = []
+        with winreg.OpenKey(root_key, subkey_path, 0, winreg.KEY_READ | winreg.KEY_ENUMERATE_SUB_KEYS) as key:
+            i = 0
+            while True:
+                try:
+                    child_name = winreg.EnumKey(key, i)
+                    subkeys.append(child_name)
+                    i += 1
+                except OSError:
+                    break
+        
+        for child_name in subkeys:
+            delete_key_recursive(root_key, f"{subkey_path}\\{child_name}", max_depth - 1)
+            
+        winreg.DeleteKey(root_key, subkey_path)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+
 def unregister_context_menu():
     """右クリックメニューから削除"""
     removed = []
@@ -345,44 +453,17 @@ def unregister_context_menu():
 
     # メニュー定義キーの削除
     menu_key_path = rf"{REG_ROOT_PATH}\{REGISTRY_KEY_NAME}.Menu"
-    try:
-        for i in range(1, 100):
-            try:
-                winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset{i}\command")
-                winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset{i}")
-            except FileNotFoundError: pass
-            try:
-                winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset{i:02d}\command")
-                winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\Preset{i:02d}")
-            except FileNotFoundError: pass
-        try:
-            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\GUI\command")
-            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell\GUI")
-        except FileNotFoundError: pass
-        try:
-            winreg.DeleteKey(REG_ROOT, rf"{menu_key_path}\shell")
-        except FileNotFoundError: pass
-        try:
-            winreg.DeleteKey(REG_ROOT, menu_key_path)
-        except FileNotFoundError: pass
-    except Exception as e:
-        pass # 無視
+    delete_key_recursive(REG_ROOT, menu_key_path)
 
     for ext in VIDEO_EXTENSIONS:
         try:
             # 1. 単独メニューの削除
             key_path = rf"{REG_ROOT_PATH}\SystemFileAssociations\{ext}\shell\{REGISTRY_KEY_NAME}"
-            try: winreg.DeleteKey(REG_ROOT, rf"{key_path}\command")
-            except FileNotFoundError: pass
-            try: winreg.DeleteKey(REG_ROOT, key_path)
-            except FileNotFoundError: pass
+            delete_key_recursive(REG_ROOT, key_path)
 
             # 2. プリセットメニューの削除
             preset_key_path = rf"{REG_ROOT_PATH}\SystemFileAssociations\{ext}\shell\{REGISTRY_KEY_NAME_PRESET}"
-            try: winreg.DeleteKey(REG_ROOT, rf"{preset_key_path}\command")
-            except FileNotFoundError: pass
-            try: winreg.DeleteKey(REG_ROOT, preset_key_path)
-            except FileNotFoundError: pass
+            delete_key_recursive(REG_ROOT, preset_key_path)
 
             removed.append(ext)
         except Exception as e:
@@ -391,16 +472,10 @@ def unregister_context_menu():
     # * キーも削除
     try:
         star_key_path = rf"{REG_ROOT_PATH}\*\shell\{REGISTRY_KEY_NAME}"
-        try: winreg.DeleteKey(REG_ROOT, rf"{star_key_path}\command")
-        except FileNotFoundError: pass
-        try: winreg.DeleteKey(REG_ROOT, star_key_path)
-        except FileNotFoundError: pass
+        delete_key_recursive(REG_ROOT, star_key_path)
 
         star_preset_path = rf"{REG_ROOT_PATH}\*\shell\{REGISTRY_KEY_NAME_PRESET}"
-        try: winreg.DeleteKey(REG_ROOT, rf"{star_preset_path}\command")
-        except FileNotFoundError: pass
-        try: winreg.DeleteKey(REG_ROOT, star_preset_path)
-        except FileNotFoundError: pass
+        delete_key_recursive(REG_ROOT, star_preset_path)
 
         removed.append("*")
     except Exception as e:

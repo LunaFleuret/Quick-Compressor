@@ -1,7 +1,7 @@
 [Setup]
 AppName=Quick Compressor
 AppVersion=2.1.0
-AppPublisher=Raika
+AppPublisher=LunaFleuret
 DefaultDirName={autopf}\Quick Compressor
 DefaultGroupName=Quick Compressor
 OutputBaseFilename=QuickCompressor_Setup

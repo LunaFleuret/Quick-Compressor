@@ -105,14 +105,38 @@ GITHUB_REPO = "LunaFleuret/Quick-Compressor"
 
 # 定数とパス解決
 def get_app_dir():
+    """アプリケーション実行階層を取得"""
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
+def get_resource_path(relative_path):
+    """
+    リソースファイルのパスを取得（二段構え探索構造）
+    1. PyInstaller Exe 同階層 (os.path.dirname(sys.executable))
+    2. Temp ディレクトリ (_MEIPASS)
+    3. スクリプト同階層
+    """
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(sys.executable)
+        exe_path = os.path.join(exe_dir, relative_path)
+        if os.path.exists(exe_path):
+            return exe_path
+        
+        meipass_dir = getattr(sys, '_MEIPASS', exe_dir)
+        meipass_path = os.path.join(meipass_dir, relative_path)
+        if os.path.exists(meipass_path):
+            return meipass_path
+        
+        return exe_path
+    else:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(script_dir, relative_path)
+
 APP_DIR = get_app_dir()
 
 def load_custom_font():
-    font_path = os.path.join(APP_DIR, "fonts", "RiiPopkkR.otf")
+    font_path = get_resource_path(os.path.join("fonts", "RiiPopkkR.otf"))
     if os.path.exists(font_path) and sys.platform == "win32":
         try:
             FR_PRIVATE = 0x10
@@ -122,8 +146,8 @@ def load_custom_font():
 
 load_custom_font()
 
-_bundled_ffmpeg = os.path.join(APP_DIR, "bin", "ffmpeg.exe")
-_bundled_ffprobe = os.path.join(APP_DIR, "bin", "ffprobe.exe")
+_bundled_ffmpeg = get_resource_path(os.path.join("bin", "ffmpeg.exe"))
+_bundled_ffprobe = get_resource_path(os.path.join("bin", "ffprobe.exe"))
 
 FFMPEG_PATH = _bundled_ffmpeg if os.path.exists(_bundled_ffmpeg) else "ffmpeg"
 FFPROBE_PATH = _bundled_ffprobe if os.path.exists(_bundled_ffprobe) else "ffprobe"
@@ -191,6 +215,18 @@ NVENC_PRESETS = [
 # ─────────────────────────────────────────────
 # ユーティリティ関数
 # ─────────────────────────────────────────────
+def parse_version(v_str: str) -> tuple:
+    """バージョン文字列 ('v2.1.0' 等) を数値タプルに変換"""
+    import re
+    if not v_str:
+        return (0,)
+    v_clean = str(v_str).lstrip("vV").strip()
+    match = re.search(r"^(\d+(?:\.\d+)*)", v_clean)
+    if match:
+        return tuple(int(n) for n in match.group(1).split("."))
+    return (0,)
+
+
 def detect_gpu_and_default_codec() -> str:
     """初期選択のデフォルトコーデックを返す"""
     return "自動 (推奨: 環境に合わせて自動選択)"
@@ -256,17 +292,40 @@ def get_video_info(filepath: str) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
-    # ビデオストリームを探す
+    # ビデオストリームを探す (カバーアートなどの添付画像を除外判定)
     video_stream = None
     audio_stream = None
     for stream in data.get("streams", []):
-        if stream.get("codec_type") == "video" and video_stream is None:
+        disposition = stream.get("disposition") or {}
+        codec_name = (stream.get("codec_name") or "").lower()
+        is_attached = (
+            disposition.get("attached_pic") == 1
+            or codec_name in ("mjpeg", "png", "bmp")
+        )
+        if stream.get("codec_type") == "video" and not is_attached and video_stream is None:
             video_stream = stream
         elif stream.get("codec_type") == "audio" and audio_stream is None:
             audio_stream = stream
 
     if not video_stream:
         return {"error": "動画ストリームが見つかりません"}
+
+    # ヘルパー関数: "N/A", None や不正な文字列を安全に int / float に変換
+    def safe_int(val, default=0):
+        if val is None or str(val).strip().upper() == "N/A":
+            return default
+        try:
+            return int(float(val))
+        except (ValueError, TypeError):
+            return default
+
+    def safe_float(val, default=0.0):
+        if val is None or str(val).strip().upper() == "N/A":
+            return default
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return default
 
     # フレームレート解析
     fps_str = video_stream.get("r_frame_rate", "0/1")
@@ -276,30 +335,38 @@ def get_video_info(filepath: str) -> dict:
     except (ValueError, ZeroDivisionError):
         fps = 0
 
-    # ビットレート
-    bitrate = int(video_stream.get("bit_rate", 0) or data.get("format", {}).get("bit_rate", 0) or 0)
-    duration = float(data.get("format", {}).get("duration", 0) or 0)
-    filesize = int(data.get("format", {}).get("size", 0) or 0)
+    duration = safe_float(data.get("format", {}).get("duration", 0))
+    filesize = safe_int(data.get("format", {}).get("size", 0))
 
-    width = int(video_stream.get("width", 0))
-    height = int(video_stream.get("height", 0))
+    # ビットレート ("N/A" や 0 の場合は format や概算から補正)
+    v_bitrate = safe_int(video_stream.get("bit_rate"))
+    f_bitrate = safe_int(data.get("format", {}).get("bit_rate"))
 
-    # 回転情報の取得
+    bitrate = v_bitrate or f_bitrate
+    if bitrate <= 0 and duration > 0 and filesize > 0:
+        # 概算ビットレート自動補正 (bps = filesize * 8 / duration)
+        bitrate = int((filesize * 8) / duration)
+
+    width = max(1, safe_int(video_stream.get("width", 0)))
+    height = max(1, safe_int(video_stream.get("height", 0)))
+
+    # 回転情報の取得と 360 度正規化
     rotation = 0
     tags = video_stream.get("tags", {})
     if "rotate" in tags:
         try:
             rotation = int(float(tags["rotate"]))
-        except ValueError:
+        except (ValueError, TypeError):
             pass
     for side_data in video_stream.get("side_data_list", []):
         if "rotation" in side_data:
             try:
                 rotation = int(float(side_data["rotation"]))
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
                 
-    if abs(rotation) in (90, 270):
+    normalized_rotation = (rotation % 360 + 360) % 360
+    if normalized_rotation in (90, 270):
         width, height = height, width
 
     info = {
@@ -311,7 +378,7 @@ def get_video_info(filepath: str) -> dict:
         "filesize": filesize,
         "codec": video_stream.get("codec_name", "不明"),
         "has_audio": audio_stream is not None,
-        "rotation": rotation,
+        "rotation": normalized_rotation,
     }
     return info
 
@@ -365,12 +432,22 @@ class QuickCompressorApp:
                  auto_close: bool = False):
         self.preset_mode = False
         self.root = root
-        self.input_paths = [input_path] if input_path else []
-        self.input_path = input_path
+        if isinstance(input_path, list):
+            self.input_paths = [p for p in input_path if p]
+            self.input_path = self.input_paths[0] if self.input_paths else None
+        else:
+            self.input_paths = [input_path] if input_path else []
+            self.input_path = input_path
         self.current_file_index = 0
         self.batch_saved_bytes = 0
         self._queue_data = {}  # ファイルパス → {status, progress, orig_size, out_size, settings}
+        self._queue_widget_cache = {}  # キュー描画キャッシュ用
         self._selected_queue_path = None  # キューで現在選択中のファイル
+        self._is_applying_settings = False  # 設定適用中の重複traceガード
+        self._drop_overlay_timer = None  # ドロップオーバーレイタイマー
+        self._trace_preset_id = None
+        self._trace_codec_id = None
+        self._trace_audio_id = None
         self.is_converting = False
         self.process = None
 
@@ -403,7 +480,7 @@ class QuickCompressorApp:
         saved_minimize_on_right_click = False
         if os.path.exists(config_path):
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with open(config_path, "r", encoding="utf-8-sig") as f:
                     config = json.load(f)
                     if "auto_close" in config:
                         saved_auto_close = bool(config["auto_close"])
@@ -514,7 +591,7 @@ class QuickCompressorApp:
 
     def _enable_window_drag(self):
         def start_drag(event):
-            ignore_classes = ("Button", "TButton", "TCombobox", "TScale", "Radiobutton", "TRadiobutton", "Checkbutton", "TCheckbutton")
+            ignore_classes = ("Button", "TButton", "TCombobox", "TScale", "Radiobutton", "TRadiobutton", "Checkbutton", "TCheckbutton", "Canvas", "Scrollbar", "TScrollbar", "Listbox", "Entry", "TEntry", "Text")
             if event.widget.winfo_class() in ignore_classes or getattr(event.widget, '_is_file_card', False):
                 self.root._drag_start_x = None
                 return
@@ -647,6 +724,9 @@ class QuickCompressorApp:
         # --- 進捗 + 変換ボタン ---
         self._build_progress_area(main_frame)
 
+        # --- UI変数のリアルタイム同期トレースの登録 ---
+        self._setup_settings_traces()
+
     def _build_file_info_card(self, parent):
         """ファイル情報カードの構築"""
         self.card_frame = tk.Frame(parent, bg=COLORS["bg_card"], padx=16, pady=12,
@@ -758,52 +838,97 @@ class QuickCompressorApp:
         if getattr(self, '_drop_overlay', None) is not None and self._drop_overlay.winfo_exists():
             return event.action
             
-        # ToplevelではなくFrameを親の上に配置（OSのウィンドウ制御による不具合を回避）
         self._drop_overlay = tk.Frame(self.root, bg=COLORS["bg_dark"], highlightbackground=COLORS["accent"], highlightthickness=4)
         self._drop_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
         
+        # オーバーレイのクリック消去イベント
+        self._drop_overlay.bind("<ButtonPress-1>", lambda e: self._close_drop_overlay())
+        self.root.bind("<Escape>", self._on_esc_drop_overlay, add="+")
+        
         inner_frame = tk.Frame(self._drop_overlay, bg=COLORS["bg_dark"])
         inner_frame.pack(expand=True)
+        inner_frame.bind("<ButtonPress-1>", lambda e: self._close_drop_overlay())
         
-        tk.Label(inner_frame, text="📥", font=(APP_FONT, 48), fg=COLORS["accent"], bg=COLORS["bg_dark"]).pack()
-        tk.Label(inner_frame, text="ここにドロップして変更", font=(APP_FONT, 25), fg=COLORS["accent"], bg=COLORS["bg_dark"]).pack(pady=10)
+        lbl_icon = tk.Label(inner_frame, text="📥", font=(APP_FONT, 48), fg=COLORS["accent"], bg=COLORS["bg_dark"])
+        lbl_icon.pack()
+        lbl_icon.bind("<ButtonPress-1>", lambda e: self._close_drop_overlay())
+        
+        lbl_txt = tk.Label(inner_frame, text="ここにドロップして変更", font=(APP_FONT, 25), fg=COLORS["accent"], bg=COLORS["bg_dark"])
+        lbl_txt.pack(pady=10)
+        lbl_txt.bind("<ButtonPress-1>", lambda e: self._close_drop_overlay())
         
         if HAS_DND:
             self._drop_overlay.drop_target_register(DND_FILES)
             self._drop_overlay.dnd_bind('<<Drop>>', self._on_drop_from_overlay)
             self._drop_overlay.dnd_bind('<<DropLeave>>', self._on_overlay_drop_leave)
             
+        # 安全タイムアウト (4秒後に自動解体)
+        if getattr(self, '_drop_overlay_timer', None):
+            try: self.root.after_cancel(self._drop_overlay_timer)
+            except Exception: pass
+        self._drop_overlay_timer = self.root.after(4000, self._close_drop_overlay)
+
         return event.action
 
-    def _on_overlay_drop_leave(self, event):
+    def _close_drop_overlay(self):
+        if getattr(self, '_drop_overlay_timer', None):
+            try: self.root.after_cancel(self._drop_overlay_timer)
+            except Exception: pass
+            self._drop_overlay_timer = None
         if getattr(self, '_drop_overlay', None) is not None and self._drop_overlay.winfo_exists():
             self._drop_overlay.destroy()
             self._drop_overlay = None
 
+    def _on_esc_drop_overlay(self, event):
+        self._close_drop_overlay()
+
+    def _on_overlay_drop_leave(self, event):
+        self._close_drop_overlay()
+
     def _on_drop_from_overlay(self, event):
-        self._on_overlay_drop_leave(None)
+        self._close_drop_overlay()
         self._on_drop(event)
 
-    def _on_drop(self, event):
-        self._on_overlay_drop_leave(None)
-        files = self.root.tk.splitlist(event.data)
-        if not files:
-            return
+    def _set_input_files(self, filepaths: list):
+        """複数ファイルの個別エラーハンドリングを行い、正常ファイルのみセットする"""
+        valid_paths = []
+        error_messages = []
+        for path in filepaths:
+            if not path or not os.path.exists(path):
+                continue
+            info = get_video_info(path)
+            if "error" in info:
+                error_messages.append(f"{Path(path).name}: {info['error']}")
+            else:
+                valid_paths.append(path)
+                
+        if error_messages:
+            msg = "以下のファイルの読み込みに失敗しました:\n" + "\n".join(error_messages[:5])
+            if len(error_messages) > 5:
+                msg += f"\n...他 {len(error_messages) - 5} 件"
+            messagebox.showwarning("ファイル読み込み警告", msg, parent=self.root)
             
-        self.input_paths = list(files)
-        self.input_path = self.input_paths[0]
+        if not valid_paths:
+            if not getattr(self, 'input_paths', None):
+                self.input_path = None
+                self.input_paths = []
+                self._build_empty_file_info()
+                self._update_ui_state()
+            return
+
+        self.input_paths = valid_paths
+        self.input_path = valid_paths[0]
         self.video_info = get_video_info(self.input_path)
-        if "error" in self.video_info:
-            messagebox.showerror("エラー", f"動画の読み込みに失敗しました:\n{self.video_info['error']}")
-            self.input_path = None
-            self.input_paths = []
-            self._build_empty_file_info()
-            self._update_ui_state()
-            return
-            
         self._build_populated_file_info()
         self._sync_queue_data()
         self._update_ui_state()
+
+    def _on_drop(self, event):
+        self._close_drop_overlay()
+        files = self.root.tk.splitlist(event.data)
+        if not files:
+            return
+        self._set_input_files(list(files))
 
     def _select_file(self):
         filepaths = filedialog.askopenfilenames(
@@ -814,21 +939,7 @@ class QuickCompressorApp:
             ],
         )
         if filepaths:
-            self.input_paths = list(filepaths)
-            self.input_path = self.input_paths[0]
-            # 動画情報を再取得
-            self.video_info = get_video_info(self.input_path)
-            if "error" in self.video_info:
-                messagebox.showerror("エラー", f"動画の読み込みに失敗しました:\n{self.video_info['error']}")
-                self.input_path = None
-                self.input_paths = []
-                self._build_empty_file_info()
-                self._update_ui_state()
-                return
-                
-            self._build_populated_file_info()
-            self._sync_queue_data()
-            self._update_ui_state()
+            self._set_input_files(list(filepaths))
 
     def _build_settings(self, parent):
         """設定エリアの構築"""
@@ -1299,36 +1410,71 @@ class QuickCompressorApp:
         self._queue_data = new_queue
         self._refresh_queue_display()
 
+    def _setup_settings_traces(self):
+        """UI変数変更時のリアルタイム設定同期トレースを設定する"""
+        vars_to_trace = [
+            "codec_var", "preset_var", "quality_var", "fps_var", "resolution_var",
+            "mode_var", "audio_var", "audio_mode_var", "auto_delete_var",
+            "target_size_var", "target_percent_var"
+        ]
+        for var_name in vars_to_trace:
+            var = getattr(self, var_name, None)
+            if var and hasattr(var, "trace_add"):
+                try:
+                    var.trace_add("write", self._on_ui_setting_changed_sync)
+                except Exception:
+                    pass
+
+    def _on_ui_setting_changed_sync(self, *args):
+        """UI変数変更時に選択中キューアイテムの設定をリアルタイム自動同期する"""
+        if getattr(self, "_is_applying_settings", False):
+            return
+        path = getattr(self, "_selected_queue_path", None)
+        if path and path in self._queue_data:
+            self._queue_data[path]["settings"] = self._capture_current_settings()
+
     def _refresh_queue_display(self):
-        """キューパネルの表示を全体更新する"""
+        """キューパネルの表示を差分更新（キャッシュ化）する"""
         if not hasattr(self, '_queue_inner'):
             return
 
-        for w in self._queue_inner.winfo_children():
-            w.destroy()
+        if not hasattr(self, '_queue_widget_cache'):
+            self._queue_widget_cache = {}
 
-        self._queue_progress_bars = {}
-        self._queue_percent_labels = {}
         selected_path = getattr(self, '_selected_queue_path', None)
         is_converting = getattr(self, 'is_converting', False)
+        current_paths = getattr(self, 'input_paths', [])
 
-        if not getattr(self, 'input_paths', []):
-            tk.Label(
-                self._queue_inner,
-                text="ファイルを\n追加してください",
-                font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
-                justify="center"
-            ).pack(expand=True, pady=30)
+        if not current_paths:
+            for cache in list(self._queue_widget_cache.values()):
+                try:
+                    cache["outer"].destroy()
+                    if cache.get("sep"):
+                        cache["sep"].destroy()
+                except Exception:
+                    pass
+            self._queue_widget_cache.clear()
+
+            if not hasattr(self, '_queue_empty_label') or not self._queue_empty_label.winfo_exists():
+                self._queue_empty_label = tk.Label(
+                    self._queue_inner,
+                    text="ファイルを\n追加してください",
+                    font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
+                    justify="center"
+                )
+            self._queue_empty_label.pack(expand=True, pady=30)
+
             if hasattr(self, '_queue_count_label'):
                 self._queue_count_label.configure(text="")
             if hasattr(self, '_queue_summary_label'):
-                self._queue_summary_label.configure(
-                    text="ファイルを追加してください", fg=COLORS["text_dim"]
-                )
+                self._queue_summary_label.configure(text="ファイルを追加してください", fg=COLORS["text_dim"])
             if hasattr(self, '_queue_hint_label'):
                 self._queue_hint_label.configure(text="")
             self._queue_canvas.configure(scrollregion=self._queue_canvas.bbox("all"))
             return
+        else:
+            if hasattr(self, '_queue_empty_label') and self._queue_empty_label.winfo_exists():
+                self._queue_empty_label.pack_forget()
 
         STATUS_MAP = {
             "waiting":    ("⏳", COLORS["text_dim"]),
@@ -1338,208 +1484,193 @@ class QuickCompressorApp:
             "cancelled":  ("✖",  COLORS["warning"]),
         }
 
-        # 全アイテムへのクリックバインドを再帰的に設定するヘルパー
+        # 存在しなくなったパスのキャッシュウィジェット破棄
+        cached_paths = list(self._queue_widget_cache.keys())
+        for path in cached_paths:
+            if path not in current_paths:
+                try:
+                    self._queue_widget_cache[path]["outer"].destroy()
+                    if self._queue_widget_cache[path].get("sep"):
+                        self._queue_widget_cache[path]["sep"].destroy()
+                except Exception:
+                    pass
+                del self._queue_widget_cache[path]
+
+        self._queue_progress_bars = {}
+        self._queue_percent_labels = {}
+
         def _bind_click(widget, path):
-            widget.bind("<ButtonPress-1>", lambda e, p=path: self._on_queue_item_click(p), add="+")
+            widget.bind("<ButtonPress-1>", lambda e, p=path: self._on_queue_item_click(p))
             if not is_converting:
                 widget.configure(cursor="hand2")
             for child in widget.winfo_children():
                 _bind_click(child, path)
 
-        for i, path in enumerate(self.input_paths):
+        for i, path in enumerate(current_paths):
             data = self._queue_data.get(path, {"status": "waiting", "progress": 0.0})
             status = data.get("status", "waiting")
             icon, icon_color = STATUS_MAP.get(status, ("⏳", COLORS["text_dim"]))
             is_selected = (path == selected_path)
+            bg_color = "#eef4ff" if is_selected else COLORS["bg_card"]
 
-            # 区切り線（最初以外）
-            if i > 0:
-                tk.Frame(self._queue_inner, bg=COLORS["border"], height=1).pack(
-                    fill="x", padx=6
-                )
+            if path not in self._queue_widget_cache:
+                sep = tk.Frame(self._queue_inner, bg=COLORS["border"], height=1) if i > 0 else None
+                outer = tk.Frame(self._queue_inner, bg=COLORS["bg_card"])
+                accent_line = tk.Frame(outer, bg=COLORS["accent"], width=3)
+                item_frame = tk.Frame(outer, bg=bg_color)
 
-            # アイテム外側フレーム（選択時に左アクセントラインを表示）
-            outer = tk.Frame(self._queue_inner, bg=COLORS["bg_card"])
+                row1 = tk.Frame(item_frame, bg=bg_color)
+                row1.pack(fill="x")
+
+                icon_lbl = tk.Label(row1, text=icon, font=(APP_FONT, 10), fg=icon_color, bg=bg_color)
+                icon_lbl.pack(side="left", padx=(4, 3))
+
+                filename = Path(path).name
+                MAX_LEN = 17
+                if len(filename) > MAX_LEN:
+                    ext = Path(path).suffix
+                    stem_len = MAX_LEN - len(ext) - 3
+                    filename = Path(path).stem[:stem_len] + "..." + ext if stem_len > 0 else filename[:MAX_LEN - 3] + "..."
+
+                name_lbl = tk.Label(row1, text=filename, font=(APP_FONT, 10, "bold"), fg=COLORS["text"], bg=bg_color, anchor="w")
+                name_lbl.pack(side="left", fill="x", expand=True, padx=(0, 4))
+
+                row2 = tk.Frame(item_frame, bg=bg_color)
+                row2.pack(fill="x", padx=(20, 4), pady=(1, 3))
+
+                status_lbl = tk.Label(row2, text="", font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=bg_color, anchor="w")
+                status_lbl.pack(fill="x")
+
+                pb = ttk.Progressbar(row2, maximum=100, value=0, style="Custom.Horizontal.TProgressbar")
+                pct_lbl = tk.Label(row2, text="0%", font=(APP_FONT, 9), fg=COLORS["accent"], bg=bg_color, width=4)
+
+                cache = {
+                    "sep": sep, "outer": outer, "accent_line": accent_line, "item_frame": item_frame,
+                    "row1": row1, "row2": row2, "icon_lbl": icon_lbl, "name_lbl": name_lbl,
+                    "status_lbl": status_lbl, "pb": pb, "pct_lbl": pct_lbl
+                }
+                self._queue_widget_cache[path] = cache
+                _bind_click(outer, path)
+            else:
+                cache = self._queue_widget_cache[path]
+
+            outer = cache["outer"]
+            accent_line = cache["accent_line"]
+            item_frame = cache["item_frame"]
+            row1 = cache["row1"]
+            row2 = cache["row2"]
+            icon_lbl = cache["icon_lbl"]
+            name_lbl = cache["name_lbl"]
+            status_lbl = cache["status_lbl"]
+            pb = cache["pb"]
+            pct_lbl = cache["pct_lbl"]
+
+            if i == 0:
+                if cache.get("sep"):
+                    cache["sep"].pack_forget()
+            else:
+                if not cache.get("sep"):
+                    cache["sep"] = tk.Frame(self._queue_inner, bg=COLORS["border"], height=1)
+                cache["sep"].pack(fill="x", padx=6)
             outer.pack(fill="x", padx=6, pady=(5, 3))
 
             if is_selected:
-                tk.Frame(outer, bg=COLORS["accent"], width=3).pack(side="left", fill="y")
-
-            item_frame = tk.Frame(outer, bg="#eef4ff" if is_selected else COLORS["bg_card"])
+                accent_line.pack(side="left", fill="y")
+            else:
+                accent_line.pack_forget()
             item_frame.pack(side="left", fill="both", expand=True)
 
-            # Row 1: アイコン + ファイル名
-            row1 = tk.Frame(item_frame, bg=item_frame["bg"])
-            row1.pack(fill="x")
-
-            tk.Label(
-                row1, text=icon,
-                font=(APP_FONT, 10), fg=icon_color, bg=item_frame["bg"]
-            ).pack(side="left", padx=(4, 3))
-
-            filename = Path(path).name
-            MAX_LEN = 17
-            if len(filename) > MAX_LEN:
-                ext = Path(path).suffix
-                stem_len = MAX_LEN - len(ext) - 3
-                if stem_len > 0:
-                    filename = Path(path).stem[:stem_len] + "..." + ext
-                else:
-                    filename = filename[:MAX_LEN - 3] + "..."
-
-            name_color = COLORS["accent"] if is_selected else COLORS["text"]
-            tk.Label(
-                row1, text=filename,
-                font=(APP_FONT, 10, "bold"), fg=name_color, bg=item_frame["bg"],
-                anchor="w"
-            ).pack(side="left", fill="x", expand=True, padx=(0, 4))
-
-            # Row 2: 状態表示
-            row2 = tk.Frame(item_frame, bg=item_frame["bg"])
-            row2.pack(fill="x", padx=(20, 4), pady=(1, 3))
+            item_frame.configure(bg=bg_color)
+            row1.configure(bg=bg_color)
+            row2.configure(bg=bg_color)
+            icon_lbl.configure(text=icon, fg=icon_color, bg=bg_color)
+            name_lbl.configure(fg=COLORS["accent"] if is_selected else COLORS["text"], bg=bg_color)
 
             if status == "converting":
+                status_lbl.pack_forget()
                 progress = data.get("progress", 0.0)
-                pb = ttk.Progressbar(
-                    row2, maximum=100, value=progress,
-                    style="Custom.Horizontal.TProgressbar"
-                )
+                pb.configure(value=progress)
+                pct_lbl.configure(text=f"{progress:.0f}%", bg=bg_color)
                 pb.pack(side="left", fill="x", expand=True, padx=(0, 4))
-                pct_lbl = tk.Label(
-                    row2, text=f"{progress:.0f}%",
-                    font=(APP_FONT, 9), fg=COLORS["accent"], bg=item_frame["bg"], width=4
-                )
                 pct_lbl.pack(side="left")
                 self._queue_progress_bars[path] = pb
                 self._queue_percent_labels[path] = pct_lbl
+            else:
+                pb.pack_forget()
+                pct_lbl.pack_forget()
+                status_lbl.configure(bg=bg_color)
+                status_lbl.pack(fill="x")
+                if status == "done":
+                    orig = data.get("orig_size", 0)
+                    out = data.get("out_size", 0)
+                    info_text = f"{format_filesize(orig)}→{format_filesize(out)} ({out/orig*100:.0f}%)" if orig > 0 and out > 0 else "完了"
+                    status_lbl.configure(text=info_text, fg=COLORS["success"])
+                elif status == "error":
+                    status_lbl.configure(text="変換失敗", fg=COLORS["error"])
+                elif status == "cancelled":
+                    status_lbl.configure(text="中止されました", fg=COLORS["warning"])
+                else:  # waiting
+                    if is_selected:
+                        status_lbl.configure(text="← 左側で設定中", fg=COLORS["accent"], font=(APP_FONT, 9, "bold"))
+                    else:
+                        status_lbl.configure(text="待機中", fg=COLORS["text_dim"], font=(APP_FONT, 9))
 
-            elif status == "done":
-                orig = data.get("orig_size", 0)
-                out = data.get("out_size", 0)
-                if orig > 0 and out > 0:
-                    ratio = out / orig * 100
-                    info_text = f"{format_filesize(orig)}→{format_filesize(out)} ({ratio:.0f}%)"
-                else:
-                    info_text = "完了"
-                tk.Label(
-                    row2, text=info_text,
-                    font=(APP_FONT, 9), fg=COLORS["success"], bg=item_frame["bg"], anchor="w"
-                ).pack(fill="x")
-
-            elif status == "error":
-                tk.Label(
-                    row2, text="変換失敗",
-                    font=(APP_FONT, 9), fg=COLORS["error"], bg=item_frame["bg"], anchor="w"
-                ).pack(fill="x")
-
-            elif status == "cancelled":
-                tk.Label(
-                    row2, text="中止されました",
-                    font=(APP_FONT, 9), fg=COLORS["warning"], bg=item_frame["bg"], anchor="w"
-                ).pack(fill="x")
-
-            else:  # waiting
-                if is_selected:
-                    tk.Label(
-                        row2, text="← 左側で設定中",
-                        font=(APP_FONT, 9, "bold"), fg=COLORS["accent"], bg=item_frame["bg"], anchor="w"
-                    ).pack(fill="x")
-                else:
-                    tk.Label(
-                        row2, text="待機中",
-                        font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=item_frame["bg"], anchor="w"
-                    ).pack(fill="x")
-
-            # クリックイベントを全子ウィジェットに適用
-            _bind_click(outer, path)
-
-        # 下パディング
-        tk.Frame(self._queue_inner, bg=COLORS["bg_card"], height=4).pack()
-
-        # カウントラベル更新
         done_c = sum(1 for d in self._queue_data.values() if d.get("status") == "done")
-        total = len(self.input_paths)
+        total = len(current_paths)
         if hasattr(self, '_queue_count_label'):
             self._queue_count_label.configure(text=f"{done_c}/{total}")
 
-        # サマリーラベル更新
         if hasattr(self, '_queue_summary_label'):
             waiting_c = sum(1 for d in self._queue_data.values() if d.get("status") == "waiting")
             conv_c    = sum(1 for d in self._queue_data.values() if d.get("status") == "converting")
             err_c     = sum(1 for d in self._queue_data.values() if d.get("status") in ("error", "cancelled"))
-
             if total == 1:
-                st = self._queue_data.get(self.input_paths[0], {}).get("status", "waiting")
-                if st == "done":
-                    self._queue_summary_label.configure(text="変換完了", fg=COLORS["success"])
-                elif st == "converting":
-                    self._queue_summary_label.configure(text="変換中...", fg=COLORS["accent"])
-                elif st == "error":
-                    self._queue_summary_label.configure(text="変換失敗", fg=COLORS["error"])
-                elif st == "cancelled":
-                    self._queue_summary_label.configure(text="中止されました", fg=COLORS["warning"])
-                else:
-                    self._queue_summary_label.configure(text="", fg=COLORS["text_dim"])
-            elif conv_c > 0:
-                self._queue_summary_label.configure(
-                    text=f"変換中... {done_c}完了 / 残り {waiting_c}件",
-                    fg=COLORS["accent"]
-                )
-            elif done_c == total:
-                self._queue_summary_label.configure(
-                    text=f"すべて完了 ({total}件)", fg=COLORS["success"]
-                )
-            elif err_c > 0:
-                self._queue_summary_label.configure(
-                    text=f"{done_c}完了, {err_c}件失敗", fg=COLORS["error"]
-                )
-            else:
-                self._queue_summary_label.configure(
-                    text=f"{total}件 待機中", fg=COLORS["text_dim"]
-                )
+                st = self._queue_data.get(current_paths[0], {}).get("status", "waiting")
+                if st == "done": self._queue_summary_label.configure(text="変換完了", fg=COLORS["success"])
+                elif st == "converting": self._queue_summary_label.configure(text="変換中...", fg=COLORS["accent"])
+                elif st == "error": self._queue_summary_label.configure(text="変換失敗", fg=COLORS["error"])
+                elif st == "cancelled": self._queue_summary_label.configure(text="中止されました", fg=COLORS["warning"])
+                else: self._queue_summary_label.configure(text="", fg=COLORS["text_dim"])
+            elif conv_c > 0: self._queue_summary_label.configure(text=f"変換中... {done_c}完了 / 残り {waiting_c}件", fg=COLORS["accent"])
+            elif done_c == total: self._queue_summary_label.configure(text=f"すべて完了 ({total}件)", fg=COLORS["success"])
+            elif err_c > 0: self._queue_summary_label.configure(text=f"{done_c}完了, {err_c}件失敗", fg=COLORS["error"])
+            else: self._queue_summary_label.configure(text=f"{total}件 待機中", fg=COLORS["text_dim"])
 
-        # ヒントラベル更新
         if hasattr(self, '_queue_hint_label'):
-            if is_converting:
-                self._queue_hint_label.configure(text="")
+            if is_converting: self._queue_hint_label.configure(text="")
             elif selected_path:
                 fname = Path(selected_path).stem[:10] + ("…" if len(Path(selected_path).stem) > 10 else "")
-                self._queue_hint_label.configure(
-                    text=f"⚙️ {fname} の設定中",
-                    fg=COLORS["accent"]
-                )
-            else:
-                self._queue_hint_label.configure(
-                    text="ファイルをクリックして個別設定",
-                    fg=COLORS["text_dim"]
-                )
+                self._queue_hint_label.configure(text=f"⚙️ {fname} の設定中", fg=COLORS["accent"])
+            else: self._queue_hint_label.configure(text="💡 項目クリックで個別に設定", fg=COLORS["text_dim"])
 
-        self._queue_inner.update_idletasks()
         self._queue_canvas.configure(scrollregion=self._queue_canvas.bbox("all"))
 
     def _update_queue_item_progress(self, filepath, progress):
         """変換中ファイルの進捗バーのみを軽量更新する"""
         if filepath in self._queue_data:
             self._queue_data[filepath]["progress"] = progress
-        pb = getattr(self, '_queue_progress_bars', {}).get(filepath)
-        if pb and pb.winfo_exists():
-            pb.configure(value=progress)
-        lbl = getattr(self, '_queue_percent_labels', {}).get(filepath)
-        if lbl and lbl.winfo_exists():
-            lbl.configure(text=f"{progress:.0f}%")
+        cache = getattr(self, '_queue_widget_cache', {}).get(filepath)
+        if cache:
+            pb = cache.get("pb")
+            if pb and pb.winfo_exists():
+                pb.configure(value=progress)
+            pct_lbl = cache.get("pct_lbl")
+            if pct_lbl and pct_lbl.winfo_exists():
+                pct_lbl.configure(text=f"{progress:.0f}%")
 
     def _capture_current_settings(self) -> dict:
         """現在のUI設定を辞書として取得する"""
         s = {
-            "codec":      getattr(self, 'codec_var',      None) and self.codec_var.get(),
-            "preset":     getattr(self, 'preset_var',     None) and self.preset_var.get(),
-            "fps":        getattr(self, 'fps_var',        None) and self.fps_var.get(),
-            "resolution": getattr(self, 'resolution_var', None) and self.resolution_var.get(),
-            "mode":       getattr(self, 'mode_var',       None) and self.mode_var.get() or "cq",
-            "cq":         getattr(self, 'quality_var',    None) and self.quality_var.get() or 25,
-            "audio":      getattr(self, 'audio_var',      None) and self.audio_var.get(),
-            "audio_mode": getattr(self, 'audio_mode_var', None) and self.audio_mode_var.get() or "copy",
-            "auto_delete":getattr(self, 'auto_delete_var',None) and self.auto_delete_var.get() or False,
+            "codec":         getattr(self, 'codec_var',      None) and self.codec_var.get(),
+            "preset":        getattr(self, 'preset_var',     None) and self.preset_var.get(),
+            "fps":           getattr(self, 'fps_var',        None) and self.fps_var.get(),
+            "resolution":    getattr(self, 'resolution_var', None) and self.resolution_var.get(),
+            "mode":          getattr(self, 'mode_var',       None) and self.mode_var.get() or "cq",
+            "cq":            getattr(self, 'quality_var',    None) and self.quality_var.get() or 25,
+            "audio":         getattr(self, 'audio_var',      None) and self.audio_var.get(),
+            "audio_mode":    getattr(self, 'audio_mode_var', None) and self.audio_mode_var.get() or "copy",
+            "auto_delete":   getattr(self, 'auto_delete_var',None) and self.auto_delete_var.get() or False,
+            "keep_metadata": getattr(self, 'keep_metadata_var', None) and self.keep_metadata_var.get() if hasattr(self, 'keep_metadata_var') else True,
         }
         if hasattr(self, 'target_size_var'):
             try:
@@ -1553,27 +1684,36 @@ class QuickCompressorApp:
                 s["target_percent"] = 50.0
         return s
 
-    def _apply_settings(self, settings: dict):
+    def _apply_settings(self, settings: dict, completion_event: threading.Event = None):
         """設定辞書をUI変数に反映する"""
         if not settings:
+            if completion_event:
+                completion_event.set()
             return
-        if settings.get("codec")      and hasattr(self, 'codec_var'):      self.codec_var.set(settings["codec"])
-        if settings.get("preset")     and hasattr(self, 'preset_var'):     self.preset_var.set(settings["preset"])
-        if settings.get("fps")        and hasattr(self, 'fps_var'):        self.fps_var.set(settings["fps"])
-        if settings.get("resolution") and hasattr(self, 'resolution_var'): self.resolution_var.set(settings["resolution"])
-        if "audio"       in settings  and hasattr(self, 'audio_var'):      self.audio_var.set(settings["audio"])
-        if "audio_mode"  in settings  and hasattr(self, 'audio_mode_var'): self.audio_mode_var.set(settings["audio_mode"])
-        if "auto_delete" in settings  and hasattr(self, 'auto_delete_var'):self.auto_delete_var.set(settings["auto_delete"])
-        if "mode"        in settings  and hasattr(self, 'mode_var'):       self.mode_var.set(settings["mode"])
-        if "cq"          in settings  and hasattr(self, 'quality_var'):
-            self.quality_var.set(settings["cq"])
-            if hasattr(self, '_on_quality_change'): self._on_quality_change(settings["cq"])
-        if "target_size_mb" in settings and hasattr(self, 'target_size_var'):
-            self.target_size_var.set(str(settings["target_size_mb"]))
-        if "target_percent" in settings and hasattr(self, 'target_percent_var'):
-            self.target_percent_var.set(str(settings["target_percent"]))
-        if hasattr(self, '_on_mode_change'):       self._on_mode_change()
-        if hasattr(self, '_on_resolution_change'): self._on_resolution_change()
+        self._is_applying_settings = True
+        try:
+            if settings.get("codec")      and hasattr(self, 'codec_var'):      self.codec_var.set(settings["codec"])
+            if settings.get("preset")     and hasattr(self, 'preset_var'):     self.preset_var.set(settings["preset"])
+            if settings.get("fps")        and hasattr(self, 'fps_var'):        self.fps_var.set(settings["fps"])
+            if settings.get("resolution") and hasattr(self, 'resolution_var'): self.resolution_var.set(settings["resolution"])
+            if "audio"       in settings  and hasattr(self, 'audio_var'):      self.audio_var.set(settings["audio"])
+            if "audio_mode"  in settings  and hasattr(self, 'audio_mode_var'): self.audio_mode_var.set(settings["audio_mode"])
+            if "auto_delete" in settings  and hasattr(self, 'auto_delete_var'):self.auto_delete_var.set(settings["auto_delete"])
+            if "keep_metadata" in settings and hasattr(self, 'keep_metadata_var'):self.keep_metadata_var.set(settings["keep_metadata"])
+            if "mode"        in settings  and hasattr(self, 'mode_var'):       self.mode_var.set(settings["mode"])
+            if "cq"          in settings  and hasattr(self, 'quality_var'):
+                self.quality_var.set(settings["cq"])
+                if hasattr(self, '_on_quality_change'): self._on_quality_change(settings["cq"])
+            if "target_size_mb" in settings and hasattr(self, 'target_size_var'):
+                self.target_size_var.set(str(settings["target_size_mb"]))
+            if "target_percent" in settings and hasattr(self, 'target_percent_var'):
+                self.target_percent_var.set(str(settings["target_percent"]))
+            if hasattr(self, '_on_mode_change'):       self._on_mode_change()
+            if hasattr(self, '_on_resolution_change'): self._on_resolution_change()
+        finally:
+            self._is_applying_settings = False
+            if completion_event:
+                completion_event.set()
 
     def _on_queue_item_click(self, path: str):
         """キューアイテムのクリック処理—設定の保存切替え"""
@@ -1648,7 +1788,7 @@ class QuickCompressorApp:
         total_saved = 0
         if os.path.exists(config_path):
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with open(config_path, "r", encoding="utf-8-sig") as f:
                     config_data = json.load(f)
                     total_saved = config_data.get("total_saved_bytes", 0)
             except Exception:
@@ -1743,17 +1883,8 @@ class QuickCompressorApp:
             self.preset_display_var.set(current_display)
             
         _update_preset_display()
-        trace_preset_id = self.preset_var.trace_add("write", _update_preset_display)
-        trace_codec_id = self.codec_var.trace_add("write", _update_preset_display)
-        
-        def _on_destroy(event):
-            if event.widget == win:
-                try:
-                    self.preset_var.trace_remove("write", trace_preset_id)
-                    self.codec_var.trace_remove("write", trace_codec_id)
-                except Exception:
-                    pass
-        win.bind("<Destroy>", _on_destroy, add="+")
+        self._trace_preset_id = self.preset_var.trace_add("write", _update_preset_display)
+        self._trace_codec_id = self.codec_var.trace_add("write", _update_preset_display)
         
         def _on_combo_select(event):
             selected = self.preset_display_var.get()
@@ -1783,15 +1914,7 @@ class QuickCompressorApp:
             self.audio_copy_var.set(val == "copy")
             self.audio_reencode_var.set(val == "reencode")
             
-        trace_id_audio = self.audio_mode_var.trace_add("write", _sync_audio_cbs)
-        
-        def _on_destroy_audio(event):
-            if event.widget == win:
-                try:
-                    self.audio_mode_var.trace_remove("write", trace_id_audio)
-                except Exception:
-                    pass
-        win.bind("<Destroy>", _on_destroy_audio, add="+")
+        self._trace_audio_id = self.audio_mode_var.trace_add("write", _sync_audio_cbs)
 
         def _on_audio_cb_click(mode_val):
             self.audio_mode_var.set(mode_val)
@@ -1925,7 +2048,7 @@ class QuickCompressorApp:
         _current_dc_type = "HEVC"
         if os.path.exists(_config_path):
             try:
-                with open(_config_path, "r", encoding="utf-8") as f:
+                with open(_config_path, "r", encoding="utf-8-sig") as f:
                     _current_dc_type = json.load(f).get("default_codec_type", "HEVC")
             except Exception:
                 pass
@@ -1944,6 +2067,32 @@ class QuickCompressorApp:
                 command=lambda: self._save_default_codec_type(default_codec_type_var.get())
             ).pack(side="left", padx=(0, 12))
 
+        def _close_settings():
+            try:
+                if getattr(self, '_trace_preset_id', None):
+                    self.preset_var.trace_remove("write", self._trace_preset_id)
+                    self._trace_preset_id = None
+                if getattr(self, '_trace_codec_id', None):
+                    self.codec_var.trace_remove("write", self._trace_codec_id)
+                    self._trace_codec_id = None
+                if getattr(self, '_trace_audio_id', None):
+                    self.audio_mode_var.trace_remove("write", self._trace_audio_id)
+                    self._trace_audio_id = None
+            except Exception:
+                pass
+            try:
+                if win.winfo_exists():
+                    win.grab_release()
+            except Exception:
+                pass
+            try:
+                if win.winfo_exists():
+                    win.destroy()
+            except Exception:
+                pass
+
+        win.protocol("WM_DELETE_WINDOW", _close_settings)
+
         # 閉じるボタン
         close_btn = tk.Button(
             pad, text="閉じる",
@@ -1951,7 +2100,7 @@ class QuickCompressorApp:
             bg=COLORS["bg_card"], activebackground=COLORS["bg_input"],
             activeforeground=COLORS["text_bright"],
             relief="flat", padx=20, pady=6, cursor="hand2",
-            command=win.destroy,
+            command=_close_settings,
         )
         close_btn.pack(pady=(4, 0))
 
@@ -1966,7 +2115,7 @@ class QuickCompressorApp:
         config = {}
         if os.path.exists(config_path):
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with open(config_path, "r", encoding="utf-8-sig") as f:
                     config = json.load(f)
             except Exception:
                 pass
@@ -2012,7 +2161,7 @@ class QuickCompressorApp:
             return
 
         try:
-            with open(presets_path, "r", encoding="utf-8") as f:
+            with open(presets_path, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
         except Exception as e:
             messagebox.showerror("エラー", f"プリセットの読み込みに失敗しました:\n{e}", parent=parent)
@@ -2055,9 +2204,8 @@ class QuickCompressorApp:
             changed_count += 1
 
         if changed_count == 0:
-            messagebox.showinfo("情報", "変更するカスタムプリセットが見つかりませんでした。", parent=parent)
+            messagebox.showinfo("情報", "変更するカスタムプリセットが見つからませんでした。", parent=parent)
             return
-
         try:
             with open(presets_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
@@ -2084,7 +2232,7 @@ class QuickCompressorApp:
         config = {}
         if os.path.exists(config_path):
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with open(config_path, "r", encoding="utf-8-sig") as f:
                     config = json.load(f)
             except Exception:
                 pass
@@ -2108,20 +2256,29 @@ class QuickCompressorApp:
         if not hasattr(self, 'video_info') or not self.input_path:
             return
         res_val = self.resolution_var.get()
-        orig_w = self.video_info["width"]
-        orig_h = self.video_info["height"]
+        orig_w = max(1, self.video_info.get("width", 1920))
+        orig_h = max(1, self.video_info.get("height", 1080))
         
         if res_val == "元のまま":
             new_w = orig_w
             new_h = orig_h
         else:
-            target_h = int(res_val.replace("p", ""))
-            if target_h != orig_h:
-                new_w = int(orig_w * (target_h / orig_h))
-                new_h = target_h
+            target_res = int(res_val.replace("p", ""))
+            orig_short = max(1, min(orig_w, orig_h))
+            orig_long = max(1, max(orig_w, orig_h))
+            if orig_short != target_res:
+                scale_factor = target_res / orig_short
+                new_short = target_res
+                new_long = int(orig_long * scale_factor)
+                if orig_w < orig_h:
+                    new_w = new_short
+                    new_h = new_long
+                else:
+                    new_w = new_long
+                    new_h = new_short
                 # 偶数丸め
-                new_w = new_w - (new_w % 2)
-                new_h = new_h - (new_h % 2)
+                new_w = (new_w // 2) * 2
+                new_h = (new_h // 2) * 2
             else:
                 new_w = orig_w
                 new_h = orig_h
@@ -2129,18 +2286,32 @@ class QuickCompressorApp:
         self.resolution_preview_label.configure(
             text=f"{orig_w}×{orig_h} → {new_w}×{new_h}"
         )
-        self._check_resolution_warning(new_h)
+        self._check_resolution_warning(new_h, new_w)
 
-    def _check_resolution_warning(self, new_h=None):
+    def _check_resolution_warning(self, new_h=None, new_w=None):
         if not hasattr(self, 'resolution_warning_label') or not hasattr(self, 'video_info'):
             return
             
-        if new_h is None:
+        if new_h is None or new_w is None:
             res_val = self.resolution_var.get()
+            orig_w = max(1, self.video_info.get("width", 1920))
+            orig_h = max(1, self.video_info.get("height", 1080))
             if res_val == "元のまま":
-                new_h = self.video_info.get("height", 1080)
+                new_w, new_h = orig_w, orig_h
             else:
-                new_h = int(res_val.replace("p", ""))
+                target_res = int(res_val.replace("p", ""))
+                orig_short = max(1, min(orig_w, orig_h))
+                orig_long = max(1, max(orig_w, orig_h))
+                if orig_short != target_res:
+                    scale_factor = target_res / orig_short
+                    new_short = target_res
+                    new_long = int(orig_long * scale_factor)
+                    if orig_w < orig_h:
+                        new_w, new_h = new_short, new_long
+                    else:
+                        new_w, new_h = new_long, new_short
+                else:
+                    new_w, new_h = orig_w, orig_h
 
         warning_text = ""
         mode = self.mode_var.get()
@@ -2163,18 +2334,20 @@ class QuickCompressorApp:
             if target_size_mb is not None and target_size_mb > 0:
                 duration = self.video_info.get("duration", 0)
                 if duration > 0:
-                    target_total_kbps = (target_size_mb * 0.90 * 8192) / duration
+                    mb_to_kbps_factor = (1024 * 1024 * 8) / 1000.0
+                    target_total_kbps = (target_size_mb * 0.95 * mb_to_kbps_factor) / duration
                     has_audio_var = hasattr(self, 'audio_var') and self.audio_var.get()
                     audio_kbps = 64 if (has_audio_var and self.video_info.get("has_audio")) else 0
                     video_kbps = target_total_kbps - audio_kbps
                     
-                    if new_h >= 2160:
+                    short_side = min(new_w, new_h)
+                    if short_side >= 2160:
                         required_kbps = 6000
                         rec_res = "1080pまたは720p"
-                    elif new_h >= 1440:
+                    elif short_side >= 1440:
                         required_kbps = 3000
                         rec_res = "1080pまたは720p"
-                    elif new_h >= 1080:
+                    elif short_side >= 1080:
                         required_kbps = 1500
                         rec_res = "720p以下"
                     else:
@@ -2234,18 +2407,18 @@ class QuickCompressorApp:
     # ─────────────────────────────────────────
     # FFmpegコマンド生成
     # ─────────────────────────────────────────
-    def _build_ffmpeg_command(self, fallback_encoder=None) -> list:
-        codec_name = self.codec_var.get()
-        codec_info = CODECS[codec_name]
+    def _build_ffmpeg_command(self, settings: dict = None, fallback_encoder=None) -> list:
+        if settings is None:
+            settings = self._capture_current_settings()
+
+        codec_name = settings.get("codec") or self._init_codec
+        codec_info = CODECS.get(codec_name, CODECS[detect_gpu_and_default_codec()])
         encoder = fallback_encoder if fallback_encoder else codec_info["encoder"]
         ext = codec_info["ext"]
 
         if encoder == "auto":
             try:
-                cmd = ["wmic", "path", "win32_VideoController", "get", "name"]
-                result = subprocess.run(cmd, capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=3)
-                output = result.stdout.lower()
-                if "amd" in output or "radeon" in output:
+                if register_menu.is_amd_gpu():
                     encoder = "hevc_amf"
                 else:
                     encoder = "hevc_nvenc"
@@ -2275,23 +2448,16 @@ class QuickCompressorApp:
         if is_nvenc:
             input_codec = self.video_info.get("codec", "")
             cuvid_decoder = CUVID_DECODERS.get(input_codec)
-            use_gpu_decode = cuvid_decoder is not None
-            has_rotation = self.video_info.get("rotation", 0) != 0
-            if use_gpu_decode:
-                if has_rotation:
-                    cmd.extend(["-hwaccel", "cuda", "-c:v", cuvid_decoder])
-                    use_gpu_decode = False  # 回転がある場合、自動回転を効かせるためCPUメモリに落とす
-                else:
-                    cmd.extend(["-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
-                               "-c:v", cuvid_decoder])
+            has_rotation = (self.video_info.get("rotation", 0) % 360) != 0
+            if cuvid_decoder and not has_rotation:
+                use_gpu_decode = True
+                cmd.extend(["-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
+                           "-c:v", cuvid_decoder])
             else:
+                use_gpu_decode = False
                 cmd.extend(["-hwaccel", "auto"])
 
         elif is_amf:
-            # AMD: d3d11va（DirectX 11）ハードウェアデコードでGPU使用率を向上させる
-            # CPUデコード → GPU転送のボトルネックを解消し、Video Codec Engineを有効活用する
-            # ※ d3d11va はデコード後フレームをシステムメモリに戻すため、
-            #   use_gpu_decode は False のまま（-pix_fmt yuv420p が必要）
             cmd.extend(["-hwaccel", "d3d11va"])
 
         cmd.extend(["-i", self.input_path])
@@ -2329,22 +2495,21 @@ class QuickCompressorApp:
             if duration > 0:
                 is_target_size_mode = True
                 audio_kbps = 64 if (self.audio_var.get() and self.video_info.get("has_audio")) else 0
-                # A案の対策: 50MB以下の目標サイズなど、シビアな場合はマージンを多めに取る
                 if target_size_mb <= 55.0:
                     margin = 0.85 if is_amf else 0.90
                 else:
                     margin = 0.90 if is_amf else 0.95
                 
-                target_total_kbps = (target_size_mb * margin * 8192) / duration
+                mb_to_kbps_factor = (1024 * 1024 * 8) / 1000.0
+                target_total_kbps = (target_size_mb * margin * mb_to_kbps_factor) / duration
                 video_kbps = max(100, int(target_total_kbps - audio_kbps))
                 
-                # B案の対策: バッファサイズを等倍(1倍)にして、瞬間的なビットレート超過を許容しない
                 buf_multiplier = 1 if target_size_mb <= 55.0 else 2
                 
                 if is_amf:
-                    # AMFエンコーダーはvbr_peakを使用
+                    amf_rc = "vbr" if encoder == "av1_amf" else "vbr_peak"
                     cmd.extend([
-                        "-rc", "vbr_peak",
+                        "-rc", amf_rc,
                         "-b:v", f"{video_kbps}k",
                         "-maxrate", f"{video_kbps}k",
                         "-bufsize", f"{video_kbps * buf_multiplier}k"
@@ -2370,12 +2535,12 @@ class QuickCompressorApp:
                     cmd.extend([
                         "-rc", "vbr",
                         "-cq", str(cq),
+                        "-b:v", "0",
                         "-maxrate", f"{orig_video_kbps}k",
                         "-bufsize", f"{orig_video_kbps * 2}k"
                     ])
                 elif is_amf:
                     # AMD AMF のVBR上限ロック付き画質設定
-                    # av1_amf は vbr_peak 非対応のため vbr を使用
                     amf_rc = "vbr" if encoder == "av1_amf" else "vbr_peak"
                     cmd.extend([
                         "-rc", amf_rc,
@@ -2385,11 +2550,11 @@ class QuickCompressorApp:
                         "-bufsize", f"{orig_video_kbps * 2}k"
                     ])
             else:
-                # 元のビットレートが取得できない場合の従来のフォールバック
+                # 元のビットレートが取得できない場合のフォールバック
                 if encoder in ("h264_nvenc", "hevc_nvenc"):
-                    cmd.extend(["-rc", "constqp", "-qp", str(cq)])
+                    cmd.extend(["-rc", "constqp", "-qp", str(cq), "-b:v", "0"])
                 elif encoder == "av1_nvenc":
-                    cmd.extend(["-cq", str(cq)])
+                    cmd.extend(["-cq", str(cq), "-b:v", "0"])
                 elif is_amf:
                     # AMD AMF の固定画質設定 (CQモード)
                     cmd.extend(["-rc", "cqp", "-qp_p", str(cq), "-qp_i", str(cq)])
@@ -2404,12 +2569,9 @@ class QuickCompressorApp:
                 amf_preset = "quality"
             elif preset_val.lower() in ("p4", "balanced"):
                 amf_preset = "balanced"
-            # av1_amf: quality プリセットは look-ahead が重くGPU/CPU使用率が低下するため
-            # balanced に抑えてスループットを確保する
             if encoder == "av1_amf" and amf_preset == "quality":
                 amf_preset = "balanced"
             cmd.extend(["-preset", amf_preset])
-            # av1_amf 固有: ファイルエンコードモードを明示してGPU使用率を向上
             if encoder == "av1_amf":
                 cmd.extend(["-usage", "transcoding"])
         else:
@@ -2419,26 +2581,33 @@ class QuickCompressorApp:
         filters = []
 
         # 解像度スケーリング
-        res_val = self.resolution_var.get()
+        res_val = settings.get("resolution", "元のまま")
+        orig_w = max(1, self.video_info.get("width", 1920))
+        orig_h = max(1, self.video_info.get("height", 1080))
+        orig_short = max(1, min(orig_w, orig_h))
+        orig_long = max(1, max(orig_w, orig_h))
         
         # 容量指定モードで「元のまま」かつビットレートが低すぎる場合は自動ダウンスケール
         if is_target_size_mode and res_val == "元のまま":
-            orig_h = self.video_info.get("height", 1080)
             if video_kbps < 500:
-                res_val = "480p" if orig_h > 480 else res_val
+                res_val = "480p" if orig_short > 480 else res_val
             elif video_kbps < 1500:
-                res_val = "720p" if orig_h > 720 else res_val
+                res_val = "720p" if orig_short > 720 else res_val
         
         if res_val != "元のまま":
-            target_h = int(res_val.replace("p", ""))
-            orig_w = self.video_info["width"]
-            orig_h = self.video_info["height"]
-            
-            if target_h != orig_h:
-                new_w = int(orig_w * (target_h / orig_h))
-                new_h = target_h
-                new_w = new_w - (new_w % 2)
-                new_h = new_h - (new_h % 2)
+            target_res = int(res_val.replace("p", ""))
+            if orig_short != target_res:
+                scale_factor = target_res / orig_short
+                new_short = target_res
+                new_long = int(orig_long * scale_factor)
+                if orig_w < orig_h:
+                    new_w = new_short
+                    new_h = new_long
+                else:
+                    new_w = new_long
+                    new_h = new_short
+                new_w = (new_w // 2) * 2
+                new_h = (new_h // 2) * 2
                 if use_gpu_decode:
                     filters.append(f"scale_cuda={new_w}:{new_h}")
                 else:
@@ -2448,16 +2617,17 @@ class QuickCompressorApp:
             cmd.extend(["-vf", ",".join(filters)])
 
         # フレームレート
-        fps_val = self.fps_var.get()
+        fps_val = settings.get("fps", "元のまま")
         if fps_val != "元のまま":
             cmd.extend(["-r", fps_val])
 
-        # 音声（設定ダイアログの音声モードに従う）
-        if self.audio_var.get() and self.video_info.get("has_audio"):
+        # 音声
+        audio_enabled = settings.get("audio", True)
+        if audio_enabled and self.video_info.get("has_audio"):
             if is_target_size_mode:
                 # 目標サイズモード時は強制的に AAC 64kbps にして容量節約
                 cmd.extend(["-c:a", "aac", "-b:a", "64k"])
-            elif self.audio_mode_var.get() == "copy":
+            elif settings.get("audio_mode", "copy") == "copy":
                 cmd.extend(["-c:a", "copy"])
             else:
                 cmd.extend(["-c:a", "aac", "-b:a", "128k"])
@@ -2465,10 +2635,10 @@ class QuickCompressorApp:
             cmd.append("-an")
 
         # オリジナルのメタデータ（内部撮影日時・GPS等）をすべて引き継ぐ
-        if self.keep_metadata_var.get():
+        if settings.get("keep_metadata", True):
             cmd.extend(["-map_metadata", "0"])
 
-        cmd.extend(["-movflags", "+faststart"])  # プレビュー/ストリーミング最適化
+        cmd.extend(["-movflags", "+faststart"])
 
         cmd.append(self.output_path)
         return cmd
@@ -2510,11 +2680,11 @@ class QuickCompressorApp:
             )
 
     def _get_default_presets(self):
-        default_path = os.path.join(register_menu.APP_DIR, "default_presets.json")
+        default_path = register_menu.get_resource_path("default_presets.json")
         default_presets = {}
         if os.path.exists(default_path):
             try:
-                with open(default_path, "r", encoding="utf-8") as f:
+                with open(default_path, "r", encoding="utf-8-sig") as f:
                     content = f.read()
 
                 # ① GPU ブランド置換（NVIDIA NVENC → AMD AMF）
@@ -2527,7 +2697,7 @@ class QuickCompressorApp:
                 default_codec_type = "HEVC"  # デフォルトは変換なし
                 if os.path.exists(config_path):
                     try:
-                        with open(config_path, "r", encoding="utf-8") as f:
+                        with open(config_path, "r", encoding="utf-8-sig") as f:
                             cfg = json.load(f)
                             default_codec_type = cfg.get("default_codec_type", "HEVC")
                     except Exception:
@@ -2642,12 +2812,26 @@ class QuickCompressorApp:
         )
         delete_btn.pack(side="left")
 
+        def _close_preset_manager():
+            try:
+                if win.winfo_exists():
+                    win.grab_release()
+            except Exception:
+                pass
+            try:
+                if win.winfo_exists():
+                    win.destroy()
+            except Exception:
+                pass
+
+        win.protocol("WM_DELETE_WINDOW", _close_preset_manager)
+
         close_btn = tk.Button(
             action_frame, text="閉じる",
             font=(APP_FONT, 9), fg=COLORS["text"], bg=COLORS["bg_card"],
             activebackground=COLORS["bg_input"], activeforeground=COLORS["text_bright"],
             relief="flat", cursor="hand2", padx=16, pady=6,
-            command=win.destroy
+            command=_close_preset_manager
         )
         close_btn.pack(side="right")
 
@@ -2682,7 +2866,7 @@ class QuickCompressorApp:
             config_path = os.path.join(register_menu.DATA_DIR, "config.json")
             if os.path.exists(config_path):
                 try:
-                    with open(config_path, "r", encoding="utf-8") as f:
+                    with open(config_path, "r", encoding="utf-8-sig") as f:
                         config = json.load(f)
                         if "preset" in config:
                             config_preset = config["preset"]
@@ -2757,7 +2941,7 @@ class QuickCompressorApp:
         user_presets = {}
         if os.path.exists(presets_path):
             try:
-                with open(presets_path, "r", encoding="utf-8") as f:
+                with open(presets_path, "r", encoding="utf-8-sig") as f:
                     data = json.load(f)
                     
                 needs_save = False
@@ -3021,45 +3205,269 @@ class QuickCompressorApp:
         # タスクバー: 準備状態 (緑のアニメーション)
         self.taskbar_progress.set_state(TBPF_INDETERMINATE)
 
-        self._process_next_file()
-
-    def _process_next_file(self):
-        if getattr(self, 'is_cancelled', False):
-            return
-            
-        if self.current_file_index >= len(self.input_paths):
-            self._on_batch_finished()
-            return
-            
-        self.input_path = self.input_paths[self.current_file_index]
-        self.video_info = get_video_info(self.input_path)
-
-        # そのファイルの個別設定をUIに反映（設定がなければ現在のUIをそのまま使用）
-        file_settings = self._queue_data.get(self.input_path, {}).get("settings")
-        if file_settings:
-            self._apply_settings(file_settings)
-
-        # キュー: 現在ファイルを「変換中」に更新
-        if self.input_path in self._queue_data:
-            self._queue_data[self.input_path]["status"] = "converting"
-            self._queue_data[self.input_path]["progress"] = 0.0
-        self.root.after(0, self._refresh_queue_display)
-
-        thread = threading.Thread(target=self._run_ffmpeg, daemon=True)
+        # サブスレッドでバッチ処理ワーカーを開始（再帰排除）
+        thread = threading.Thread(target=self._conversion_worker, daemon=True)
         thread.start()
+
+    def _conversion_worker(self):
+        """サブスレッドで全ファイルをループ処理するワーカー"""
+        try:
+            while self.current_file_index < len(self.input_paths):
+                if getattr(self, "is_cancelled", False):
+                    break
+
+                self.input_path = self.input_paths[self.current_file_index]
+                self.video_info = get_video_info(self.input_path)
+
+                # 個別設定を取得（無ければ現在のデフォルト設定）
+                file_settings = self._queue_data.get(self.input_path, {}).get("settings")
+                if not file_settings:
+                    file_settings = self._capture_current_settings()
+
+                # 個別設定をUI変数へ反映（threading.Eventで完了同期）
+                evt = threading.Event()
+                def _do_apply(s=file_settings, e=evt):
+                    self._apply_settings(s, completion_event=e)
+                self.root.after(0, _do_apply)
+                evt.wait()
+
+                if self.input_path in self._queue_data:
+                    self._queue_data[self.input_path]["status"] = "converting"
+                    self._queue_data[self.input_path]["progress"] = 0.0
+                self.root.after(0, self._refresh_queue_display)
+
+                fallback_encoder = None
+                while True:
+                    if getattr(self, "is_cancelled", False):
+                        break
+
+                    success, should_retry, next_fallback = self._execute_single_ffmpeg(file_settings, fallback_encoder)
+                    if success:
+                        self.current_file_index += 1
+                        break
+                    elif should_retry:
+                        fallback_encoder = next_fallback
+                        continue
+                    else:
+                        # 失敗（バッチは継続）
+                        self.current_file_index += 1
+                        break
+
+                if not getattr(self, "is_cancelled", False) and self.current_file_index < len(self.input_paths):
+                    time.sleep(0.5)
+
+            if not getattr(self, "is_cancelled", False):
+                self.root.after(0, self._on_batch_finished)
+
+        except Exception as e:
+            self._update_status(f"❌ エラー: {str(e)}", color=COLORS["error"])
+            self._show_error(str(e))
+        finally:
+            self.process = None
+            self.is_converting = False
+            self.taskbar_progress.set_state(TBPF_NOPROGRESS)
+            def _reset_btn():
+                if hasattr(self, "cancel_btn"):
+                    self.cancel_btn.pack_forget()
+                self.convert_btn.configure(state="normal", text="⚡ 圧縮開始", bg=COLORS["accent"])
+            self.root.after(0, _reset_btn)
+
+    def _execute_single_ffmpeg(self, settings: dict, fallback_encoder=None) -> tuple[bool, bool, str]:
+        """単一ファイルのFFmpeg変換を実行する。(成功, 再試行可否, 次のフォールバック)"""
+        cmd = self._build_ffmpeg_command(settings=settings, fallback_encoder=fallback_encoder)
+        duration = self.video_info.get("duration", 0)
+        start_time = time.time()
+
+        prefix = f"({self.current_file_index + 1}/{len(self.input_paths)}) " if len(self.input_paths) > 1 else ""
+        if fallback_encoder:
+            self._update_status(f"再試行中 {prefix}(H.264)... 出力: {Path(self.output_path).name}")
+        else:
+            self._update_status(f"変換中... {prefix}出力: {Path(self.output_path).name}")
+
+        initial_progress = (self.current_file_index * 100) / max(1, len(self.input_paths))
+        self._update_progress(initial_progress)
+        self.root.after(0, lambda: self.taskbar_progress.set_value(int(initial_progress * 10), 1000))
+
+        try:
+            self.process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                encoding="utf-8",
+                errors="replace",
+            )
+
+            time_pattern = re.compile(r"time=(\d+):(\d+):(\d+)\.(\d+)")
+            last_update_time = 0
+
+            for line in self.process.stderr:
+                if getattr(self, "is_cancelled", False):
+                    break
+                match = time_pattern.search(line)
+                if match and duration > 0:
+                    h, m, s, cs = match.groups()
+                    current = int(h) * 3600 + int(m) * 60 + int(s) + int(cs) / 100
+                    progress = min(current / duration * 100, 99.9)
+
+                    now = time.time()
+                    # 0.1秒以上のインターバルでのスロットリング
+                    if now - last_update_time >= 0.1 or progress == 0 or progress >= 99.0:
+                        last_update_time = now
+                        total_files = max(1, len(self.input_paths))
+                        overall_progress = (self.current_file_index * 100 + progress) / total_files
+
+                        speed_match = re.search(r"speed=\s*([\d.]+)x", line)
+                        speed_text = f" ({speed_match.group(1)}x)" if speed_match else ""
+                        eta_text = ""
+                        if speed_match:
+                            try:
+                                speed_val = float(speed_match.group(1))
+                                if speed_val > 0.1:
+                                    eta_sec = max(0, (duration - current) / speed_val)
+                                    eta_m = int(eta_sec // 60)
+                                    eta_s = int(eta_sec % 60)
+                                    eta_text = f"  ⏳ 残り約 {eta_m}分{eta_s:02d}秒" if eta_m > 0 else f"  ⏳ 残り約 {eta_s}秒"
+                            except ValueError:
+                                pass
+
+                        prefix_str = f"({self.current_file_index + 1}/{len(self.input_paths)}) " if len(self.input_paths) > 1 else ""
+                        status_str = f"変換中... {prefix_str}{progress:.1f}%{speed_text}{eta_text}  →  {Path(self.output_path).name}"
+
+                        _fp = self.input_path
+                        self.root.after(0, lambda p=overall_progress, fp=_fp, p_item=progress, st=status_str: self._update_throttled_ui(p, fp, p_item, st))
+
+            self.process.wait()
+            elapsed_time = time.time() - start_time
+
+            if self.process.returncode == 0:
+                completed_progress = ((self.current_file_index + 1) * 100) / max(1, len(self.input_paths))
+                self._update_progress(completed_progress)
+                self.root.after(0, lambda: self.taskbar_progress.set_value(int(completed_progress * 10), 1000))
+
+                # 元のファイルの「更新日時」および「アクセス日時」を引き継ぐ
+                if settings.get("keep_metadata", True):
+                    try:
+                        if os.path.exists(self.input_path) and os.path.exists(self.output_path):
+                            st = os.stat(self.input_path)
+                            os.utime(self.output_path, (st.st_atime, st.st_mtime))
+                    except Exception:
+                        pass
+
+                # 元ファイルの自動削除
+                if settings.get("auto_delete", False):
+                    if os.path.exists(self.input_path):
+                        send_to_recycle_bin(self.input_path)
+
+                out_size = os.path.getsize(self.output_path) if os.path.exists(self.output_path) else 0
+                orig_size = self.video_info.get("filesize", 0)
+
+                _done_path = self.input_path
+                if _done_path in self._queue_data:
+                    self._queue_data[_done_path].update({
+                        "status": "done", "progress": 100.0,
+                        "orig_size": orig_size, "out_size": out_size,
+                    })
+                self.root.after(0, self._refresh_queue_display)
+
+                if orig_size > 0 and out_size > 0:
+                    saved_bytes = max(0, orig_size - out_size)
+                    self.batch_saved_bytes = getattr(self, 'batch_saved_bytes', 0) + saved_bytes
+                    self.batch_orig_bytes = getattr(self, 'batch_orig_bytes', 0) + orig_size
+                    self.batch_out_bytes = getattr(self, 'batch_out_bytes', 0) + out_size
+
+                    # 累計節約容量と累計変換数の保存
+                    self._update_cumulative_stats(saved_bytes)
+
+                    ratio = out_size / orig_size * 100
+                    el = int(elapsed_time)
+                    elapsed_str = f"{el // 60}分{el % 60:02d}秒" if el >= 60 else f"{el}秒"
+                    status_text = f"✅ 変換完了！  {format_filesize(orig_size)} → {format_filesize(out_size)}  ({ratio:.1f}% / 元サイズ)  ⏱ {elapsed_str}"
+                else:
+                    el = int(elapsed_time)
+                    elapsed_str = f"{el // 60}分{el % 60:02d}秒" if el >= 60 else f"{el}秒"
+                    status_text = f"✅ 変換完了！  {format_filesize(out_size)}  ⏱ {elapsed_str}"
+
+                self._update_status(status_text, color=COLORS["accent"], font_size=11, is_bold=True)
+                return True, False, None
+
+            elif getattr(self, "is_cancelled", False):
+                self._update_progress(0)
+                self._update_status("❌ 変換が中止されました", color=COLORS["error"])
+                if hasattr(self, "output_path") and os.path.exists(self.output_path):
+                    try: os.remove(self.output_path)
+                    except Exception: pass
+                return False, False, None
+            else:
+                current_enc = getattr(self, "current_encoder", "")
+                actual_enc = fallback_encoder if fallback_encoder else current_enc
+
+                if elapsed_time < 2.0 and actual_enc in ("av1_nvenc", "av1_amf", "hevc_nvenc", "hevc_amf"):
+                    if hasattr(self, "output_path") and os.path.exists(self.output_path):
+                        try: os.remove(self.output_path)
+                        except Exception: pass
+
+                    if actual_enc in ("av1_nvenc", "av1_amf"):
+                        fallback = "hevc_nvenc" if "nvenc" in actual_enc else "hevc_amf"
+                        msg = "AV1非対応の可能性があるため、H.265(HEVC)で再試行します..."
+                    else:
+                        fallback = "h264_nvenc" if "nvenc" in actual_enc else "h264_amf"
+                        msg = "H.265非対応の可能性があるため、H.264で再試行します..."
+
+                    self._update_status(msg, color=COLORS["warning"])
+                    return False, True, fallback
+
+                self._update_status(f"❌ 変換失敗 (コード: {self.process.returncode})", color=COLORS["error"])
+                if self.input_path in self._queue_data:
+                    self._queue_data[self.input_path]["status"] = "error"
+                self.root.after(0, self._refresh_queue_display)
+                self._show_error(f"FFmpegがエラーで終了しました。\n\n終了コード: {self.process.returncode}")
+                return False, False, None
+
+        except Exception as e:
+            self._update_status(f"❌ エラー: {str(e)}", color=COLORS["error"])
+            self._show_error(str(e))
+            return False, False, None
+
+    def _update_throttled_ui(self, overall_progress, file_path, file_progress, status_str):
+        """スロットリングされたUI更新（メインスレッド用）"""
+        self.progress_var.set(overall_progress)
+        self.taskbar_progress.set_state(TBPF_NORMAL)
+        self.taskbar_progress.set_value(int(overall_progress * 10), 1000)
+        self._update_queue_item_progress(file_path, file_progress)
+        self.status_label.configure(text=status_str, fg=COLORS["text_dim"], font=(APP_FONT, 9))
+
+    def _update_cumulative_stats(self, saved_bytes):
+        """累計変換統計の更新"""
+        total_saved = 0
+        total_files = 0
+        config_path = os.path.join(register_menu.DATA_DIR, "config.json")
+        config_data = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8-sig") as f:
+                    config_data = json.load(f)
+                    total_saved = config_data.get("total_saved_bytes", 0)
+                    total_files = config_data.get("total_converted_files", 0)
+            except Exception:
+                pass
+        total_saved += saved_bytes
+        total_files += 1
+        config_data["total_saved_bytes"] = total_saved
+        config_data["total_converted_files"] = total_files
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config_data, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
 
     def _on_batch_finished(self):
         if len(self.input_paths) > 1:
             orig_total = getattr(self, 'batch_orig_bytes', 0)
             out_total = getattr(self, 'batch_out_bytes', 0)
-            saved = getattr(self, 'batch_saved_bytes', 0)
-            
-            # バッチ全体の経過時間
             batch_elapsed = int(time.time() - getattr(self, '_batch_start_time', time.time()))
-            if batch_elapsed < 60:
-                batch_elapsed_str = f"{batch_elapsed}秒"
-            else:
-                batch_elapsed_str = f"{batch_elapsed // 60}分{batch_elapsed % 60:02d}秒"
+            batch_elapsed_str = f"{batch_elapsed}秒" if batch_elapsed < 60 else f"{batch_elapsed // 60}分{batch_elapsed % 60:02d}秒"
             
             if orig_total > 0 and out_total > 0:
                 ratio = out_total / orig_total * 100
@@ -3069,16 +3477,9 @@ class QuickCompressorApp:
                     f" ({ratio:.1f}% / 元サイズ)  ⏱ {batch_elapsed_str}"
                 )
             else:
-                status_text = (
-                    f"✅ {len(self.input_paths)} 個すべての変換が完了しました！  ⏱ {batch_elapsed_str}"
-                )
+                status_text = f"✅ {len(self.input_paths)} 個すべての変換が完了しました！  ⏱ {batch_elapsed_str}"
             
-            self._update_status(
-                status_text,
-                color=COLORS["accent"],
-                font_size=11,
-                is_bold=True
-            )
+            self._update_status(status_text, color=COLORS["accent"], font_size=11, is_bold=True)
             
         self._show_success()
 
@@ -3099,252 +3500,13 @@ class QuickCompressorApp:
             self._update_status("❌ 変換が中止されました", color=COLORS["error"])
             self.cancel_btn.pack_forget()
 
-            # キュー: 変換中・待機中のファイルを「中止」に
             for path, data in self._queue_data.items():
                 if data.get("status") in ("converting", "waiting"):
                     data["status"] = "cancelled"
             self.root.after(0, self._refresh_queue_display)
 
-            # タスクバー: エラー状態 (赤色) で中止を表示
             self.taskbar_progress.set_state(TBPF_ERROR)
             self.taskbar_progress.set_value(100, 100)
-
-    def _run_ffmpeg(self, fallback_encoder=None):
-        cmd = self._build_ffmpeg_command(fallback_encoder=fallback_encoder)
-        duration = self.video_info.get("duration", 0)
-        start_time = time.time()
-
-        prefix = f"({self.current_file_index + 1}/{len(self.input_paths)}) " if len(self.input_paths) > 1 else ""
-        if fallback_encoder:
-            self._update_status(f"再試行中 {prefix}(H.264)... 出力: {Path(self.output_path).name}")
-        else:
-            self._update_status(f"変換中... {prefix}出力: {Path(self.output_path).name}")
-        # 全体の進捗に合わせて初期値を設定
-        initial_progress = (self.current_file_index * 100) / max(1, len(self.input_paths))
-        self._update_progress(initial_progress)
-        self.taskbar_progress.set_value(int(initial_progress * 10), 1000)
-        
-        skip_finally_reset = False
-
-        try:
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                encoding="utf-8",
-                errors="replace",
-            )
-
-            # FFmpegの進捗はstderrに出力される
-            time_pattern = re.compile(r"time=(\d+):(\d+):(\d+)\.(\d+)")
-
-            for line in self.process.stderr:
-                if getattr(self, "is_cancelled", False):
-                    break
-                match = time_pattern.search(line)
-                if match and duration > 0:
-                    h, m, s, cs = match.groups()
-                    current = int(h) * 3600 + int(m) * 60 + int(s) + int(cs) / 100
-                    progress = min(current / duration * 100, 99.9)
-
-                    # バッチ全体での進捗を計算
-                    total_files = max(1, len(self.input_paths))
-                    overall_progress = (self.current_file_index * 100 + progress) / total_files
-
-                    self._update_progress(overall_progress)
-
-                    # タスクバー: 通常状態 (青/緑) で進捗を更新
-                    self.taskbar_progress.set_state(TBPF_NORMAL)
-                    self.taskbar_progress.set_value(int(overall_progress * 10), 1000)
-
-                    # キューパネル: 個別ファイルの進捗を軽量更新
-                    _fp = self.input_path
-                    self.root.after(0, lambda p=progress, fp=_fp: self._update_queue_item_progress(fp, p))
-
-                    # 速度情報の抽出
-                    speed_match = re.search(r"speed=\s*([\d.]+)x", line)
-                    speed_text = f" ({speed_match.group(1)}x)" if speed_match else ""
-                    
-                    eta_text = ""
-                    if speed_match:
-                        try:
-                            speed_val = float(speed_match.group(1))
-                            if speed_val > 0.1:
-                                eta_sec = max(0, (duration - current) / speed_val)
-                                eta_m = int(eta_sec // 60)
-                                eta_s = int(eta_sec % 60)
-                                if eta_m > 0:
-                                    eta_text = f"  ⏳ 残り約 {eta_m}分{eta_s:02d}秒"
-                                else:
-                                    eta_text = f"  ⏳ 残り約 {eta_s}秒"
-                        except ValueError:
-                            pass
-
-                    prefix = f"({self.current_file_index + 1}/{len(self.input_paths)}) " if len(self.input_paths) > 1 else ""
-                    self._update_status(
-                        f"変換中... {prefix}{progress:.1f}%{speed_text}{eta_text}  →  {Path(self.output_path).name}"
-                    )
-
-            self.process.wait()
-            elapsed_time = time.time() - start_time
-
-            if self.process.returncode == 0:
-                completed_progress = ((self.current_file_index + 1) * 100) / max(1, len(self.input_paths))
-                self._update_progress(completed_progress)
-                self.taskbar_progress.set_value(int(completed_progress * 10), 1000)
-                
-                # 元のファイルの「更新日時」および「アクセス日時」を引き継ぐ
-                if self.keep_metadata_var.get():
-                    try:
-                        if os.path.exists(self.input_path) and os.path.exists(self.output_path):
-                            st = os.stat(self.input_path)
-                            os.utime(self.output_path, (st.st_atime, st.st_mtime))
-                    except Exception:
-                        pass
-                
-                # 元ファイルの自動削除
-                if getattr(self, "auto_delete_var", None) and self.auto_delete_var.get():
-                    if hasattr(self, "input_path") and os.path.exists(self.input_path):
-                        send_to_recycle_bin(self.input_path)
-
-                # 出力ファイルのサイズを取得
-                out_size = os.path.getsize(self.output_path) if os.path.exists(self.output_path) else 0
-                orig_size = self.video_info.get("filesize", 0)
-
-                # キュー: 完了ステータスに更新
-                _done_path = self.input_path
-                if _done_path in self._queue_data:
-                    self._queue_data[_done_path].update({
-                        "status": "done", "progress": 100.0,
-                        "orig_size": orig_size, "out_size": out_size,
-                    })
-                self.root.after(0, self._refresh_queue_display)
-
-                if orig_size > 0 and out_size > 0:
-                    saved_bytes = max(0, orig_size - out_size)
-                    self.batch_saved_bytes = getattr(self, 'batch_saved_bytes', 0) + saved_bytes
-                    self.batch_orig_bytes = getattr(self, 'batch_orig_bytes', 0) + orig_size
-                    self.batch_out_bytes = getattr(self, 'batch_out_bytes', 0) + out_size
-                    
-                    # 累計節約容量と累計変換数の保存
-                    total_saved = 0
-                    total_files = 0
-                    config_path = os.path.join(register_menu.DATA_DIR, "config.json")
-                    config_data = {}
-                    if os.path.exists(config_path):
-                        try:
-                            with open(config_path, "r", encoding="utf-8") as f:
-                                config_data = json.load(f)
-                                total_saved = config_data.get("total_saved_bytes", 0)
-                                total_files = config_data.get("total_converted_files", 0)
-                        except Exception:
-                            pass
-                            
-                    total_saved += saved_bytes
-                    total_files += 1
-                    config_data["total_saved_bytes"] = total_saved
-                    config_data["total_converted_files"] = total_files
-                    
-                    try:
-                        with open(config_path, "w", encoding="utf-8") as f:
-                            json.dump(config_data, f, ensure_ascii=False, indent=4)
-                    except Exception:
-                        pass
-                        
-                    ratio = out_size / orig_size * 100
-                    
-                    # 経過時間フォーマット
-                    el = int(elapsed_time)
-                    if el < 60:
-                        elapsed_str = f"{el}秒"
-                    else:
-                        elapsed_str = f"{el // 60}分{el % 60:02d}秒"
-                    
-                    status_text = (
-                        f"✅ 変換完了！  {format_filesize(orig_size)} → {format_filesize(out_size)}"
-                        f"  ({ratio:.1f}% / 元サイズ)  ⏱ {elapsed_str}"
-                    )
-                else:
-                    el = int(elapsed_time)
-                    elapsed_str = f"{el // 60}分{el % 60:02d}秒" if el >= 60 else f"{el}秒"
-                    status_text = f"✅ 変換完了！  {format_filesize(out_size)}  ⏱ {elapsed_str}"
-                    
-                self._update_status(
-                    status_text,
-                    color=COLORS["accent"],
-                    font_size=11,
-                    is_bold=True
-                )
-                
-                self.current_file_index += 1
-                if self.current_file_index < len(self.input_paths):
-                    # 次のファイルがあれば少し待ってから実行
-                    skip_finally_reset = True
-                    self.root.after(1500, self._process_next_file)
-                    return
-                else:
-                    # 全ての処理が完了
-                    if len(self.input_paths) == 1:
-                        self.root.after(0, self._on_batch_finished)
-                    else:
-                        self.root.after(1500, self._on_batch_finished)
-                    return
-                    
-            elif getattr(self, "is_cancelled", False):
-                # 中止された場合はエラーダイアログを出さずに完了処理へ
-                self._update_progress(0)
-                self._update_status("❌ 変換が中止されました", color=COLORS["error"])
-                if hasattr(self, "output_path") and os.path.exists(self.output_path):
-                    try:
-                        os.remove(self.output_path)
-                    except Exception:
-                        pass
-            else:
-                current_enc = getattr(self, "current_encoder", "")
-                actual_enc = fallback_encoder if fallback_encoder else current_enc
-                
-                if elapsed_time < 2.0 and actual_enc in ("av1_nvenc", "av1_amf", "hevc_nvenc", "hevc_amf"):
-                    if hasattr(self, "output_path") and os.path.exists(self.output_path):
-                        try:
-                            os.remove(self.output_path)
-                        except Exception:
-                            pass
-                            
-                    if actual_enc in ("av1_nvenc", "av1_amf"):
-                        fallback = "hevc_nvenc" if "nvenc" in actual_enc else "hevc_amf"
-                        msg = "AV1非対応の可能性があるため、H.265(HEVC)で再試行します..."
-                    else:
-                        fallback = "h264_nvenc" if "nvenc" in actual_enc else "h264_amf"
-                        msg = "H.265非対応の可能性があるため、H.264で再試行します..."
-                        
-                    self._update_status(msg, color=COLORS["warning"])
-                    skip_finally_reset = True
-                    self._run_ffmpeg(fallback_encoder=fallback)
-                    return
-
-                stderr_out = self.process.stderr.read() if self.process.stderr else ""
-                self._update_status(f"❌ 変換失敗 (コード: {self.process.returncode})", color=COLORS["error"])
-                # キュー: エラーステータスに更新
-                if self.input_path in self._queue_data:
-                    self._queue_data[self.input_path]["status"] = "error"
-                self.root.after(0, self._refresh_queue_display)
-                self._show_error(f"FFmpegがエラーで終了しました。\n\n終了コード: {self.process.returncode}")
-
-        except Exception as e:
-            self._update_status(f"❌ エラー: {str(e)}", color=COLORS["error"])
-            self._show_error(str(e))
-
-        finally:
-            self.process = None
-            if not skip_finally_reset:
-                self.is_converting = False
-                def _reset_btn():
-                    if hasattr(self, "cancel_btn"):
-                        self.cancel_btn.pack_forget()
-                    self.convert_btn.configure(state="normal", text="⚡ 圧縮開始", bg=COLORS["accent"])
-                self.root.after(0, _reset_btn)
 
     def _update_progress(self, value):
         self.root.after(0, lambda: self.progress_var.set(value))
@@ -3361,14 +3523,12 @@ class QuickCompressorApp:
             style.configure("Custom.Horizontal.TProgressbar", background=COLORS["success"])
             self.open_btn.pack(side="left")
             
-            # 自動削除がオンの場合は最初から「削除しました」状態にして表示する
             if getattr(self, "auto_delete_var", None) and self.auto_delete_var.get():
                 self.delete_btn.configure(text="削除しました", state="disabled")
             else:
                 self.delete_btn.configure(text="🗑 元ファイルを削除", state="normal")
             self.delete_btn.pack(side="left", padx=(8, 0))
             
-            # タスクバー: 進捗表示をクリア (完了)
             self.taskbar_progress.set_state(TBPF_NOPROGRESS)
             
             if self.auto_close_var.get():
@@ -3380,9 +3540,11 @@ class QuickCompressorApp:
             style = ttk.Style()
             style.configure("Custom.Horizontal.TProgressbar", background=COLORS["error"])
             
-            # タスクバー: エラー状態 (赤色)
             self.taskbar_progress.set_state(TBPF_ERROR)
             self.taskbar_progress.set_value(100, 100)
+            
+            self.status_label.configure(text=f"❌ エラー: {message}", fg=COLORS["error"], font=(APP_FONT, 9))
+            messagebox.showerror("エラー", message, parent=self.root)
             
         self.root.after(0, _update)
 
@@ -3406,7 +3568,7 @@ class QuickCompressorApp:
         # 24時間キャッシュチェック
         if os.path.exists(config_path):
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with open(config_path, "r", encoding="utf-8-sig") as f:
                     config = json.load(f)
                 last_check = config.get("last_update_check", 0)
                 if now - last_check < 86400:
@@ -3420,13 +3582,13 @@ class QuickCompressorApp:
         
         try:
             with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode("utf-8"))
+                data = json.loads(response.read().decode("utf-8-sig"))
                 latest_tag = data.get("tag_name", "").strip()
                 latest_version = latest_tag.lstrip("v")
                 html_url = data.get("html_url", "")
                 
-                # バージョンが異なれば新しいバージョンありとする
-                if latest_version and latest_version != CURRENT_VERSION:
+                # バージョンが大きければ新しいバージョンありとする
+                if latest_version and parse_version(latest_version) > parse_version(CURRENT_VERSION):
                     self.root.after(0, self._show_update_dialog, latest_version, html_url)
             
             self._save_update_check_time(config_path, now)
@@ -3442,7 +3604,7 @@ class QuickCompressorApp:
         config = {}
         if os.path.exists(config_path):
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with open(config_path, "r", encoding="utf-8-sig") as f:
                     config = json.load(f)
             except Exception:
                 pass
@@ -3467,7 +3629,7 @@ class QuickCompressorApp:
 # ─────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("input", nargs="?", help="入力ファイル")
+    parser.add_argument("input", nargs="*", help="入力ファイル (複数可)")
     parser.add_argument("--preset", default="p4", help="エンコードプリセット")
     parser.add_argument("--fps", default="元のまま", help="フレームレート")
     parser.add_argument("--resolution", default="元のまま", help="解像度 (1080p, 720p, etc.)")
@@ -3492,12 +3654,15 @@ def main():
         sys.exit(0)
 
     if not args.input:
-        filepath = None
+        filepaths = []
+    elif isinstance(args.input, list):
+        filepaths = [f for f in args.input if f]
     else:
-        filepath = args.input
+        filepaths = [args.input]
 
-    if filepath and not os.path.isfile(filepath):
-        messagebox.showerror("エラー", f"ファイルが見つかりません:\n{filepath}")
+    invalid_files = [f for f in filepaths if not os.path.isfile(f)]
+    if invalid_files:
+        messagebox.showerror("エラー", f"ファイルが見つかりません:\n" + "\n".join(invalid_files))
         sys.exit(1)
 
 
@@ -3518,7 +3683,7 @@ def main():
     else:
         root = tk.Tk()
     app = QuickCompressorApp(
-        root, filepath,
+        root, filepaths,
         auto_start=args.auto,
         preset=args.preset,
         fps=args.fps,
