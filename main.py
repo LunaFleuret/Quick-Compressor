@@ -98,6 +98,144 @@ class TaskbarProgress:
             self.root.after(0, _do)
 
 
+# ─────────────────────────────────────────
+# GPU エンジン使用率監視 (3D & Video Encode)
+# ─────────────────────────────────────────
+class GpuEngineMonitor:
+    """Windows PDH API を用いて 3D および Video Encode エンジンの使用率を低負荷・動的に取得するクラス"""
+    def __init__(self):
+        self.h_query = None
+        self._active_counters = {}  # path -> handle
+        self._last_refresh_time = 0
+        self._pdh = None
+        self._pdh_available = False
+        try:
+            self._pdh = ctypes.windll.pdh
+            self._pdh_available = True
+            self._init_query()
+        except Exception:
+            self._pdh_available = False
+
+    def _init_query(self):
+        self.close()
+        try:
+            h_q = wintypes.HANDLE()
+            if self._pdh.PdhOpenQueryW(None, 0, ctypes.byref(h_q)) == 0:
+                self.h_query = h_q
+                self.refresh_counters()
+                self._pdh.PdhCollectQueryData(self.h_query)
+        except Exception:
+            pass
+
+    def refresh_counters(self):
+        """プロセス起動・終了に伴う動的 GPU エンジンカウンターを検出・追従"""
+        if not self._pdh_available or not self.h_query:
+            return
+        try:
+            sz_wildcard = "\\GPU Engine(*)\\Utilization Percentage"
+            pcch_len = wintypes.DWORD(0)
+            self._pdh.PdhExpandWildCardPathW(None, sz_wildcard, None, ctypes.byref(pcch_len), 0)
+            if pcch_len.value == 0:
+                return
+
+            buf = ctypes.create_unicode_buffer(pcch_len.value)
+            if self._pdh.PdhExpandWildCardPathW(None, sz_wildcard, buf, ctypes.byref(pcch_len), 0) != 0:
+                return
+
+            raw_bytes = ctypes.string_at(ctypes.byref(buf), pcch_len.value * 2)
+            raw_str = raw_bytes.decode('utf-16le')
+            paths = set(p for p in raw_str.split('\x00') if p)
+
+            # 3D または Video Encode / Codec Engine を対象に抽出
+            filtered_paths = set()
+            for p in paths:
+                p_lower = p.lower()
+                if "engtype_3d" in p_lower or any(k in p_lower for k in ("engtype_video encode", "engtype_videoencode", "engtype_video codec engine", "engtype_video_codec")):
+                    filtered_paths.add(p)
+
+            # 新規プロセスのカウンターを追加
+            added = False
+            for p in filtered_paths:
+                if p not in self._active_counters:
+                    hc = wintypes.HANDLE()
+                    if self._pdh.PdhAddEnglishCounterW(self.h_query, p, 0, ctypes.byref(hc)) == 0:
+                        self._active_counters[p] = hc
+                        added = True
+
+            # 終了したプロセスのカウンターを削除
+            for p in list(self._active_counters.keys()):
+                if p not in filtered_paths:
+                    try:
+                        self._pdh.PdhRemoveCounter(self._active_counters[p])
+                    except Exception:
+                        pass
+                    del self._active_counters[p]
+
+            self._last_refresh_time = time.time()
+            if added:
+                self._pdh.PdhCollectQueryData(self.h_query)
+        except Exception:
+            pass
+
+    def get_utilization(self):
+        """(util_3d: float, util_encode: float) を返す"""
+        if not self._pdh_available:
+            return 0.0, 0.0
+        try:
+            if not self.h_query:
+                self._init_query()
+                return 0.0, 0.0
+
+            # 1.5秒ごとに新規プロセス（FFmpeg等）をスキャンして自動追従
+            if time.time() - self._last_refresh_time >= 1.5:
+                self.refresh_counters()
+
+            if self._pdh.PdhCollectQueryData(self.h_query) != 0:
+                return 0.0, 0.0
+
+            class PDH_FMT_COUNTERVALUE(ctypes.Structure):
+                class _U(ctypes.Union):
+                    _fields_ = [
+                        ("longValue", wintypes.LONG),
+                        ("doubleValue", ctypes.c_double),
+                        ("strValue", wintypes.LPCWSTR),
+                        ("AnsiStrValue", wintypes.LPCSTR),
+                    ]
+                _anonymous_ = ("_u",)
+                _fields_ = [
+                    ("CStatus", wintypes.DWORD),
+                    ("_u", _U)
+                ]
+
+            PDH_FMT_DOUBLE = 0x00000200
+            val = PDH_FMT_COUNTERVALUE()
+
+            u_3d = 0.0
+            u_enc = 0.0
+
+            for p, hc in list(self._active_counters.items()):
+                if self._pdh.PdhGetFormattedCounterValue(hc, PDH_FMT_DOUBLE, None, ctypes.byref(val)) == 0:
+                    if val.CStatus == 0 and val.doubleValue > 0:
+                        p_lower = p.lower()
+                        if "engtype_3d" in p_lower:
+                            u_3d += val.doubleValue
+                        else:
+                            u_enc += val.doubleValue
+
+            return min(100.0, u_3d), min(100.0, u_enc)
+        except Exception:
+            return 0.0, 0.0
+
+    def close(self):
+        if self._pdh and self.h_query:
+            try:
+                self._pdh.PdhCloseQuery(self.h_query)
+            except Exception:
+                pass
+        self.h_query = None
+        self._active_counters = {}
+
+
 # バージョン情報とリポジトリ設定
 # バージョン情報から
 CURRENT_VERSION = "2.1.0"
@@ -508,6 +646,9 @@ class QuickCompressorApp:
         self._trace_audio_id = None
         self.is_converting = False
         self.process = None
+        self._gpu_monitor = None
+        self._gpu_monitor_thread = None
+        self._gpu_monitor_running = False
 
         if codec is None:
             codec = detect_gpu_and_default_codec()
@@ -710,6 +851,20 @@ class QuickCompressorApp:
 
         # アップデートチェック（非同期）
         threading.Thread(target=self._check_for_updates, daemon=True).start()
+
+        # アプリ終了時のリソース解放
+        self.root.protocol("WM_DELETE_WINDOW", self._on_app_close)
+
+        # GPU使用率監視を開始（アイドル時・変換中問わず常時モニタリング）
+        self._start_gpu_monitor()
+
+    def _on_app_close(self):
+        """アプリ終了処理"""
+        self._stop_gpu_monitor()
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
 
     # ─────────────────────────────────────────
     # UI構築 (To-avif 風モダン・グループボックスデザイン)
@@ -1065,12 +1220,23 @@ class QuickCompressorApp:
         )
         self.progress_bar.pack(fill="x", pady=(0, 8))
 
+        # ステータス行 (左: 変換進捗・結果, 右: GPU 3D/Encode使用率バッジ)
+        status_row = tk.Frame(card, bg=COLORS["bg_card"])
+        status_row.pack(fill="x")
+
+        self.gpu_status_label = tk.Label(
+            status_row, text="",
+            font=(APP_FONT, 9, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
+            anchor="e"
+        )
+        self.gpu_status_label.pack(side="right", padx=(8, 0))
+
         self.status_label = tk.Label(
-            card, text="準備完了",
-            font=(APP_FONT, 11), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
+            status_row, text="準備完了",
+            font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
             anchor="w"
         )
-        self.status_label.pack(fill="x")
+        self.status_label.pack(side="left", fill="x", expand=True)
 
     def _build_bottom_bar(self, parent):
         """ボトムアクションバー"""
@@ -3254,9 +3420,51 @@ class QuickCompressorApp:
         # タスクバー: 準備状態 (緑のアニメーション)
         self.taskbar_progress.set_state(TBPF_INDETERMINATE)
 
+        # GPU使用率監視を開始
+        self._start_gpu_monitor()
+
         # サブスレッドでバッチ処理ワーカーを開始（再帰排除）
         thread = threading.Thread(target=self._conversion_worker, daemon=True)
         thread.start()
+
+    def _start_gpu_monitor(self):
+        """GPU (3D & Encode) 使用率の常時監視を開始（アイドル時・変換中問わず自動更新）"""
+        if getattr(self, '_gpu_monitor_running', False):
+            return
+        self._gpu_monitor_running = True
+        self._gpu_monitor = GpuEngineMonitor()
+
+        def _worker():
+            self._gpu_monitor.refresh_counters()
+            while getattr(self, '_gpu_monitor_running', False):
+                interval = 1.0 if getattr(self, 'is_converting', False) else 2.0
+                time.sleep(interval)
+                if not getattr(self, '_gpu_monitor_running', False):
+                    break
+                u_3d, u_enc = self._gpu_monitor.get_utilization()
+                def _update(d=u_3d, e=u_enc):
+                    if hasattr(self, 'gpu_status_label') and self.gpu_status_label.winfo_exists():
+                        is_conv = getattr(self, 'is_converting', False)
+                        fg_c = COLORS["accent"] if is_conv or e > 5.0 or d > 10.0 else COLORS["text_dim"]
+                        self.gpu_status_label.configure(
+                            text=f"3D: {d:4.1f}%  |  Encode: {e:4.1f}%",
+                            fg=fg_c
+                        )
+                if hasattr(self, 'root') and self.root:
+                    try:
+                        self.root.after(0, _update)
+                    except Exception:
+                        break
+
+        self._gpu_monitor_thread = threading.Thread(target=_worker, daemon=True)
+        self._gpu_monitor_thread.start()
+
+    def _stop_gpu_monitor(self):
+        """GPU 監視を停止"""
+        self._gpu_monitor_running = False
+        if hasattr(self, '_gpu_monitor') and self._gpu_monitor:
+            self._gpu_monitor.close()
+            self._gpu_monitor = None
 
     def _conversion_worker(self):
         """サブスレッドで全ファイルをループ処理するワーカー"""
