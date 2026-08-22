@@ -277,30 +277,31 @@ _bundled_ffprobe = get_resource_path(os.path.join("bin", "ffprobe.exe"))
 FFMPEG_PATH = _bundled_ffmpeg if os.path.exists(_bundled_ffmpeg) else "ffmpeg"
 FFPROBE_PATH = _bundled_ffprobe if os.path.exists(_bundled_ffprobe) else "ffprobe"
 
-# カラーパレット (To-avif 風ダークテーマ)
+# カラーパレット (Dark Slate & Electric Blue — 深みのあるダークチャコール・白文字・エレクトリックブルー)
 COLORS = {
-    "bg_dark":         "#121316",
-    "bg_card":         "#181a1f",
-    "bg_input":        "#14151a",
-    "bg_btn":          "#20222a",
-    "bg_btn_hover":    "#2b2e38",
-    "accent":          "#00a8ff",
-    "accent_hover":    "#0090db",
-    "accent_press":    "#0078b8",
-    "text":            "#e2e8f0",
-    "text_dim":        "#8b949e",
-    "text_bright":     "#ffffff",
-    "success":         "#10b981",
+    "bg_dark":         "#13151b",  # ベース背景（真っ黒より一段明るいチャコール）
+    "bg_card":         "#1c1e27",  # カード・パネル背景（ダークスレート）
+    "bg_input":        "#242733",  # 入力・プルダウン背景
+    "bg_btn":          "#262a38",  # ボタン背景
+    "bg_btn_hover":    "#34394c",  # ボタンホバー
+    "accent":          "#3b82f6",  # エレクトリックブルー（メインアクセント）
+    "accent_hover":    "#2563eb",
+    "accent_press":    "#1d4ed8",
+    "accent_cyan":     "#60a5fa",  # 計器・数値用ライトブルー
+    "text":            "#ffffff",  # 文字（ピュアホワイト）
+    "text_dim":        "#94a3b8",  # 補足テキスト（ライトスレート）
+    "text_bright":     "#ffffff",  # 強調テキスト（ピュアホワイト）
+    "success":         "#10b981",  # エメラルド
     "success_hover":   "#059669",
     "warning":         "#f59e0b",
     "warning_hover":   "#d97706",
-    "error":           "#ef4444",
-    "border":          "#272a34",
-    "border_light":    "#323642",
-    "border_card":     "#2a2d38",
-    "slider_track":    "#242630",
-    "progress_trough": "#14151a",
-    "selected_bg":     "#1e293b",
+    "error":           "#ef4444",  # レッド
+    "border":          "#2c3040",  # 極薄境界線 (1px)
+    "border_light":    "#3d4359",  # コントロール枠線
+    "border_card":     "#2c3040",  # カード枠線
+    "slider_track":    "#242733",
+    "progress_trough": "#161820",
+    "selected_bg":     "#2d354b",
 }
 
 # 高視認性UIフォント (Windows標準の滑らかな Yu Gothic UI)
@@ -318,7 +319,7 @@ CODECS = {
     "AV1 (AMD AMF)": {"encoder": "av1_amf", "ext": "mp4"},
 }
 
-FRAME_RATES = ["元のまま", "24", "30", "60"]
+FRAME_RATES = ["元のまま", "60", "30", "24"]
 RESOLUTIONS = ["元のまま", "1440p", "1080p", "720p", "480p"]
 
 # CUVIDデコーダーマッピング（GPU読み込み最適化用）
@@ -547,68 +548,19 @@ def format_bitrate(bps: int) -> str:
     return f"{kbps / 1000:.1f} Mbps"
 
 
-class RoundedCard(tk.Frame):
-    """To-avif スタイルの美しい角丸カードコンテナ"""
-    def __init__(self, parent, title="", radius=8, bg=None, card_bg=None, border=None):
-        bg = bg or COLORS["bg_dark"]
-        super().__init__(parent, bg=bg)
-        self.radius = radius
-        self.card_bg = card_bg or COLORS["bg_card"]
-        self.border_color = border or COLORS["border_card"]
-        self.title_text = title
-
-        self.top_offset = 34 if title else 12
-        self.bottom_padding = 12
-
-        # 初期高さを 1 に設定して Canvas のデフォルト高さ（206px+）による肥大化を防止
-        self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0, height=1)
-        self.canvas.pack(fill="x")
-
-        self.inner = tk.Frame(self.canvas, bg=self.card_bg)
-        self.canvas_win = self.canvas.create_window((14, self.top_offset), window=self.inner, anchor="nw")
-
-        if title:
-            self.title_lbl = tk.Label(
-                self.canvas, text=f" {title} ",
-                font=(APP_FONT, 10, "bold"), fg=COLORS["text"], bg=self.card_bg
-            )
-            self.title_win = self.canvas.create_window((16, 7), window=self.title_lbl, anchor="nw")
-
-        self.inner.bind("<Configure>", self._on_inner_configure)
-        self.canvas.bind("<Configure>", self._redraw)
-
-    def _draw_round_rect(self, x1, y1, x2, y2, r):
-        points = [
-            x1 + r, y1,
-            x2 - r, y1,
-            x2, y1,
-            x2, y1 + r,
-            x2, y2 - r,
-            x2, y2,
-            x2 - r, y2,
-            x1 + r, y2,
-            x1, y2,
-            x1, y2 - r,
-            x1, y1 + r,
-            x1, y1
-        ]
-        return self.canvas.create_polygon(points, fill=self.card_bg, outline=self.border_color, width=1, smooth=True)
-
-    def _on_inner_configure(self, event=None):
-        req_h = self.inner.winfo_reqheight()
-        total_h = req_h + self.top_offset + self.bottom_padding
-        self.canvas.configure(height=total_h)
-
-    def _redraw(self, event):
-        self.canvas.delete("card_bg")
-        w, h = event.width, event.height
-        self._on_inner_configure()
-        if w > 10 and h > 10:
-            tag = self._draw_round_rect(1, 1, w - 2, h - 2, self.radius)
-            self.canvas.itemconfig(tag, tags="card_bg")
-            self.canvas.tag_lower("card_bg")
-            inner_w = max(10, w - 28)
-            self.canvas.itemconfig(self.canvas_win, width=inner_w)
+class StudioCard(tk.LabelFrame):
+    """Studio Pro スタイルの堅牢・軽量カードコンテナ"""
+    def __init__(self, parent, title="", bg=None, card_bg=None, border=None):
+        card_bg = card_bg or COLORS["bg_card"]
+        border_color = border or COLORS["border_card"]
+        super().__init__(
+            parent, text=f" {title} " if title else "",
+            font=(APP_FONT, 10, "bold"), fg=COLORS["text_dim"],
+            bg=card_bg, labelanchor="nw",
+            highlightbackground=border_color, highlightcolor=border_color,
+            highlightthickness=1, bd=0, padx=12, pady=8
+        )
+        self.inner = self
 
 
 # ─────────────────────────────────────────────
@@ -718,53 +670,83 @@ class QuickCompressorApp:
         self._target_size_mb = target_size_mb
         self._init_codec = codec
 
-        # Tkinter全体の標準フォントを高視認性フォント（Yu Gothic UI 11pt）で完全統一
+        # Tkinter全体の標準フォントを約20%拡大して視認性を向上（Yu Gothic UI 10pt）
         try:
             import tkinter.font as tkfont
             for fn in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont", "TkSmallCaptionFont", "TkIconFont", "TkTooltipFont"):
                 try:
                     f = tkfont.nametofont(fn)
-                    f.configure(family=APP_FONT, size=11, weight="normal")
+                    f.configure(family=APP_FONT, size=10, weight="normal")
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # UI用ttkスタイルの設定（完全ダークモード専用）
-        # プルダウン（Comboboxポップダウン）の背景・文字色・縁（ボーダー）設定
-        self.root.option_add("*TCombobox*Listbox.background", COLORS["bg_card"])
-        self.root.option_add("*TCombobox*Listbox.foreground", COLORS["text"])
+        # UI用ttkスタイルの設定（ドロップダウン立体浮き出し ＆ 20%スケール）
+        self.root.option_add("*TCombobox*Listbox.background", "#252937")
+        self.root.option_add("*TCombobox*Listbox.foreground", COLORS["text_bright"])
         self.root.option_add("*TCombobox*Listbox.selectBackground", COLORS["accent"])
         self.root.option_add("*TCombobox*Listbox.selectForeground", COLORS["text_bright"])
-        self.root.option_add("*TCombobox*Listbox.font", (APP_FONT, 11))
+        self.root.option_add("*TCombobox*Listbox.font", (APP_FONT, 12))
         self.root.option_add("*TCombobox*Listbox.relief", "solid")
         self.root.option_add("*TCombobox*Listbox.borderWidth", 1)
-        self.root.option_add("*TCombobox*Listbox.highlightThickness", 1)
-        self.root.option_add("*TCombobox*Listbox.highlightBackground", COLORS["border_light"])
-        self.root.option_add("*TCombobox*Listbox.highlightColor", COLORS["border_light"])
+        self.root.option_add("*TCombobox*Listbox.highlightThickness", 2)
+        self.root.option_add("*TCombobox*Listbox.highlightBackground", COLORS["accent"])
+        self.root.option_add("*TCombobox*Listbox.highlightColor", COLORS["accent"])
 
         style = ttk.Style()
         style.theme_use("default")
         style.configure(".", background=COLORS["bg_dark"], foreground=COLORS["text"], 
                         fieldbackground=COLORS["bg_input"], selectbackground=COLORS["accent"], 
-                        selectforeground=COLORS["text_bright"], bordercolor=COLORS["border"], 
+                        selectforeground=COLORS["bg_dark"], bordercolor=COLORS["border"], 
                         darkcolor=COLORS["border"], lightcolor=COLORS["border"])
         style.configure("TCombobox", background=COLORS["bg_card"], foreground=COLORS["text"],
                         fieldbackground=COLORS["bg_input"], bordercolor=COLORS["border_light"],
-                        arrowcolor=COLORS["text"], darkcolor=COLORS["border"], lightcolor=COLORS["border"])
+                        arrowcolor=COLORS["text_dim"], darkcolor=COLORS["border"], lightcolor=COLORS["border"])
         style.map("TCombobox",
                   fieldbackground=[("readonly", COLORS["bg_input"])],
                   selectbackground=[("readonly", COLORS["bg_input"])],
                   selectforeground=[("readonly", COLORS["text"])],
                   bordercolor=[("focus", COLORS["accent"]), ("hover", COLORS["border_light"])])
-        style.configure("Vertical.TScrollbar", background="#2a2d38", troughcolor=COLORS["bg_card"],
+        style.configure("Vertical.TScrollbar", background="#262a38", troughcolor=COLORS["bg_card"],
                         bordercolor=COLORS["bg_card"], arrowcolor=COLORS["text_dim"])
         style.map("Vertical.TScrollbar",
-                  background=[("active", "#383d4c"), ("pressed", "#474d60")],
+                  background=[("active", "#34394c"), ("pressed", "#3d4359")],
                   arrowcolor=[("active", COLORS["text_bright"])])
         style.configure("Horizontal.TScale", background=COLORS["accent"], troughcolor=COLORS["slider_track"])
         style.map("Horizontal.TScale", background=[("active", COLORS["accent_hover"])])
         style.configure("Custom.Horizontal.TProgressbar", troughcolor=COLORS["progress_trough"], background=COLORS["accent"], thickness=10)
+
+        # ComboboxのドロップダウンメニューをGUIの端から端まで全幅拡張するTclフック
+        try:
+            self.root.tk.eval("""
+proc ttk::combobox::PlacePopdown {cb popdown} {
+    set toplevel [winfo toplevel $cb]
+    set root_x [winfo rootx $toplevel]
+    set root_w [winfo width $toplevel]
+    
+    set margin 18
+    set target_w [expr {$root_w - ($margin * 2)}]
+    if {$target_w < [winfo width $cb]} {
+        set target_w [winfo width $cb]
+        set target_x [winfo rootx $cb]
+    } else {
+        set target_x [expr {$root_x + $margin}]
+    }
+    
+    set y [winfo rooty $cb]
+    set h [winfo height $cb]
+    set H [winfo reqheight $popdown]
+    if {$y + $h + $H > [winfo screenheight $popdown]} {
+        set Y [expr {$y - $H}]
+    } else {
+        set Y [expr {$y + $h}]
+    }
+    wm geometry $popdown ${target_w}x${H}+${target_x}+${Y}
+}
+""")
+        except Exception:
+            pass
 
         # UI構築
         self._build_ui()
@@ -778,48 +760,28 @@ class QuickCompressorApp:
             if self.minimize_on_right_click_var.get():
                 self.root.iconify()
 
-        # ウィンドウをマウスポインターがある位置（画面）に配置（マルチディスプレイ対応）
-        self.root.update_idletasks()
-        w = self.root.winfo_width()
-        h = self.root.winfo_height()
-        pointer_x, pointer_y = self.root.winfo_pointerxy()
-        x = pointer_x - (w // 2)
-        y = pointer_y - (h // 2)
+        # モードに応じたウィンドウサイズと配置
+        if getattr(self, '_is_hud_mode', False):
+            self._switch_to_hud()
+        else:
+            self._switch_to_full_gui()
+            self.root.update_idletasks()
+            w = self.root.winfo_reqwidth()
+            h = self.root.winfo_reqheight()
+            screen_w = self.root.winfo_screenwidth()
+            screen_h = self.root.winfo_screenheight()
+            x = max(0, (screen_w - w) // 2)
+            y = max(0, (screen_h - h) // 2)
 
-        # 画面外にはみ出ないように補正 (Windows用)
-        try:
-            import ctypes
-            from ctypes import wintypes
-            class MONITORINFO(ctypes.Structure):
-                _fields_ = [
-                    ("cbSize", wintypes.DWORD),
-                    ("rcMonitor", wintypes.RECT),
-                    ("rcWork", wintypes.RECT),
-                    ("dwFlags", wintypes.DWORD)
-                ]
-            MONITOR_DEFAULTTONEAREST = 2
-            pt = wintypes.POINT(pointer_x, pointer_y)
-            h_monitor = ctypes.windll.user32.MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST)
-            if h_monitor:
-                monitor_info = MONITORINFO()
-                monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
-                if ctypes.windll.user32.GetMonitorInfoW(h_monitor, ctypes.byref(monitor_info)):
-                    work_rect = monitor_info.rcWork
-                    min_x, min_y = work_rect.left, work_rect.top
-                    max_x, max_y = work_rect.right - w, work_rect.bottom - h
-                    x = max(min_x, min(x, max_x))
-                    y = max(min_y, min(y, max_y))
-        except Exception:
-            pass
+            self.root.minsize(w, h)
+            self.root.maxsize(w, 9999)
+            self.root.geometry(f"{w}x{h}+{x}+{y}")
+            
+            if hasattr(self, 'resolution_warning_label'):
+                self.resolution_warning_label.configure(wraplength=self.main_frame.winfo_reqwidth() - 60)
 
-        # 横幅を固定し、縦幅のみ自動調整を許可（プリセットメニュー展開時にボタンが見えなくなるのを防ぐため）
-        self.root.minsize(w, h)
-        self.root.maxsize(w, 9999)
-        self.root.geometry(f"+{x}+{y}")
-        
-        # 警告ラベルなどのテキストが横幅を押し広げないように、現在の横幅に合わせて自動改行（wraplength）を設定
-        if hasattr(self, 'resolution_warning_label'):
-            self.resolution_warning_label.configure(wraplength=self.main_frame.winfo_reqwidth() - 60)
+            # 変換キューパネルの初期表示状態（2個以上のファイルがある時のみ表示）
+            self._update_queue_panel_visibility()
 
         # ウィンドウのどこでもドラッグ移動できるように設定
         self._enable_window_drag()
@@ -867,16 +829,17 @@ class QuickCompressorApp:
             pass
 
     # ─────────────────────────────────────────
-    # UI構築 (To-avif 風モダン・グループボックスデザイン)
+    # ─────────────────────────────────────────
+    # UI構築 (Studio Pro 高密度・コンパクトデザイン)
     # ─────────────────────────────────────────
     def _create_group_box(self, parent, title_text):
-        """To-avif の QGroupBox 風角丸カードコンテナを作成"""
-        card = RoundedCard(parent, title=title_text, radius=8)
-        card.pack(fill="x", pady=(0, 8))
-        return card.inner
+        """Studio Pro スタイルの堅牢・軽量カードコンテナを作成"""
+        card = StudioCard(parent, title=title_text)
+        card.pack(fill="x", pady=(0, 6))
+        return card
 
-    def _create_btn(self, parent, text, command, fg=None, bg=None, padx=14, pady=6, font_size=11, is_bold=False):
-        """To-avif の QPushButton スタイルに合わせた統一ボタン"""
+    def _create_btn(self, parent, text, command, fg=None, bg=None, padx=12, pady=5, font_size=10, is_bold=False):
+        """Studio Pro スタイルに合わせた統一ボタン（20%拡大）"""
         fg_c = fg or COLORS["text"]
         bg_c = bg or COLORS["bg_btn"]
         weight = "bold" if is_bold else "normal"
@@ -892,42 +855,48 @@ class QuickCompressorApp:
         return btn
 
     def _build_ui(self):
-        # 外側の水平コンテナ（左：メイン画面 ｜ 縦セパレーター ｜ 右：バッチキュー）
-        outer_frame = tk.Frame(self.root, bg=COLORS["bg_dark"])
-        outer_frame.pack(fill="both", expand=True)
+        # 進捗管理変数を先に初期化（HUDと通常GUI両方で参照）
+        self.progress_var = tk.DoubleVar(value=0)
 
-        # メインコンテナ（左側）
-        self.main_frame = tk.Frame(outer_frame, bg=COLORS["bg_dark"], padx=20, pady=18)
-        self.main_frame.pack(side="left", fill="both", expand=False)
+        # 外側の水平コンテナ（左：メイン画面 ｜ 縦セパレーター ｜ 右：バッチキュー）
+        self.outer_frame = tk.Frame(self.root, bg=COLORS["bg_dark"])
+        self.outer_frame.pack(fill="both", expand=True)
+
+        # --- HUDモード用フレーム（右クリック起動時専用ミニ画面） ---
+        self.hud_frame = tk.Frame(self.outer_frame, bg=COLORS["bg_dark"], padx=18, pady=16)
+        self._build_hud_section(self.hud_frame)
+
+        # メインコンテナ（左側通常GUI）
+        self.main_frame = tk.Frame(self.outer_frame, bg=COLORS["bg_dark"], padx=18, pady=16)
         main_frame = self.main_frame
 
         # 縦セパレーター
-        tk.Frame(outer_frame, bg=COLORS["border"], width=1).pack(side="left", fill="y")
+        self.queue_separator = tk.Frame(self.outer_frame, bg=COLORS["border"], width=1)
 
         # 右側：バッチキューパネル
-        self._build_queue_panel(outer_frame)
+        self._build_queue_panel(self.outer_frame)
 
         # --- プリセット作成モード バナー (初期は非表示) ---
-        self.preset_banner = tk.Frame(main_frame, bg=COLORS["success"], pady=8)
+        self.preset_banner = tk.Frame(main_frame, bg=COLORS["success"], pady=6)
         self.preset_banner_label = tk.Label(
             self.preset_banner, text="プリセット作成モード：現在の設定をプリセットとして保存できます",
-            font=(APP_FONT, 11, "bold"), fg=COLORS["text_bright"], bg=COLORS["success"]
+            font=(APP_FONT, 11, "bold"), fg=COLORS["bg_dark"], bg=COLORS["success"]
         )
         self.preset_banner_label.pack()
 
         # --- タイトル & ヘッダーバー ---
         self.title_frame = tk.Frame(main_frame, bg=COLORS["bg_dark"])
-        self.title_frame.pack(fill="x", pady=(0, 12))
+        self.title_frame.pack(fill="x", pady=(0, 8))
 
         tk.Label(
-            self.title_frame, text="⚡ Quick Compressor",
-            font=(APP_FONT, 15, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+            self.title_frame, text="Quick Compressor",
+            font=(APP_FONT, 13, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(side="left")
 
-        # 最前面ピン留めボタン (右上に配置)
+        # 最前面固定ボタン (右上に配置)
         self.is_topmost = False
         self.pin_btn = self._create_btn(
-            self.title_frame, "📌 最前面", self._toggle_topmost,
+            self.title_frame, "最前面固定", self._toggle_topmost,
             fg=COLORS["text_dim"], padx=10, pady=3, font_size=10
         )
         self.pin_btn.pack(side="right")
@@ -951,9 +920,149 @@ class QuickCompressorApp:
         # UI変数のリアルタイム同期トレースの登録
         self._setup_settings_traces()
 
+        # 初期モードの適用（右クリック起動時はHUD、通常起動時は通常GUI）
+        self._is_hud_mode = bool(self._auto_start)
+        if self._is_hud_mode:
+            self._switch_to_hud()
+        else:
+            self._switch_to_full_gui()
+
+    def _build_hud_section(self, parent):
+        """右クリック起動専用のHUDミニ画面を構築"""
+        # ヘッダー行
+        h_row = tk.Frame(parent, bg=COLORS["bg_dark"])
+        h_row.pack(fill="x", pady=(0, 10))
+
+        tk.Label(
+            h_row, text="Quick Compressor (HUD)",
+            font=(APP_FONT, 12, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+        ).pack(side="left")
+
+        self.hud_pin_btn = self._create_btn(
+            h_row, "最前面固定", self._toggle_topmost,
+            fg=COLORS["text_dim"], padx=10, pady=3, font_size=10
+        )
+        self.hud_pin_btn.pack(side="right")
+
+        # HUD情報カードコンテナ
+        card = tk.Frame(
+            parent, bg=COLORS["bg_card"],
+            highlightbackground=COLORS["border"], highlightthickness=1,
+            padx=16, pady=14
+        )
+        card.pack(fill="x", pady=(0, 10))
+
+        # 1行目: ファイル名 & 元サイズ
+        self.hud_file_label = tk.Label(
+            card, text="対象: 読み込み中...",
+            font=(APP_FONT, 10, "bold"), fg=COLORS["text_bright"], bg=COLORS["bg_card"],
+            anchor="w"
+        )
+        self.hud_file_label.pack(fill="x", pady=(0, 8))
+
+        # 2行目: プログレスバー
+        self.hud_progress_bar = ttk.Progressbar(
+            card, variable=self.progress_var,
+            maximum=100, style="Custom.Horizontal.TProgressbar"
+        )
+        self.hud_progress_bar.pack(fill="x", pady=(0, 8))
+
+        # 3行目: 進捗率 & 速度 & 残り時間
+        self.hud_speed_eta_label = tk.Label(
+            card, text="準備中...",
+            font=(APP_FONT, 10, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
+            anchor="w"
+        )
+        self.hud_speed_eta_label.pack(fill="x", pady=(0, 5))
+
+        # 4行目: GPU使用率 (3D & Encode - 計器シアン)
+        self.hud_gpu_label = tk.Label(
+            card, text="3D:  0.0%  |  Encode:  0.0%",
+            font=(APP_FONT, 10, "bold"), fg=COLORS["accent_cyan"], bg=COLORS["bg_card"],
+            anchor="w"
+        )
+        self.hud_gpu_label.pack(fill="x", pady=(0, 5))
+
+        # 5行目: 容量削減見込み / 結果
+        self.hud_reduction_label = tk.Label(
+            card, text="容量削減: 計算中...",
+            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
+            anchor="w"
+        )
+        self.hud_reduction_label.pack(fill="x")
+
+        # ボトムバー (通常GUI切り替え ＆ 中止)
+        b_row = tk.Frame(parent, bg=COLORS["bg_dark"])
+        b_row.pack(fill="x")
+
+        self.switch_to_gui_btn = self._create_btn(
+            b_row, "通常GUIに切り替え", self._switch_to_full_gui,
+            fg=COLORS["text"], bg=COLORS["bg_btn"], padx=12, pady=5, font_size=10
+        )
+        self.switch_to_gui_btn.pack(side="left")
+
+        self.hud_cancel_btn = tk.Button(
+            b_row, text="中止",
+            font=(APP_FONT, 10, "bold"), fg=COLORS["text_bright"],
+            bg=COLORS["error"], activebackground="#e11d48",
+            relief="flat", cursor="hand2", padx=16, pady=5,
+            command=self._cancel_conversion, bd=0
+        )
+        self.hud_cancel_btn.pack(side="right")
+
+    def _switch_to_full_gui(self):
+        """HUDミニ画面から通常GUI画面へ切り替える"""
+        self._is_hud_mode = False
+        if hasattr(self, 'hud_frame'):
+            self.hud_frame.pack_forget()
+        if hasattr(self, 'main_frame'):
+            self.main_frame.pack(side="left", fill="both", expand=False)
+        self._update_queue_panel_visibility()
+
+        self.root.update_idletasks()
+        req_w = self.root.winfo_reqwidth()
+        req_h = self.root.winfo_reqheight()
+
+        # 画面中央に配置
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        x = max(0, (screen_w - req_w) // 2)
+        y = max(0, (screen_h - req_h) // 2)
+
+        self.root.minsize(req_w, req_h)
+        self.root.maxsize(req_w, 9999)
+        self.root.geometry(f"{req_w}x{req_h}+{x}+{y}")
+
+    def _switch_to_hud(self):
+        """通常GUI画面からHUDミニ画面へ切り替える"""
+        self._is_hud_mode = True
+        if hasattr(self, 'queue_panel'):
+            self.queue_panel.pack_forget()
+        if hasattr(self, 'queue_separator'):
+            self.queue_separator.pack_forget()
+        if hasattr(self, 'main_frame'):
+            self.main_frame.pack_forget()
+        if hasattr(self, 'hud_frame'):
+            self.hud_frame.pack(side="left", fill="both", expand=True)
+        
+        self.root.update_idletasks()
+        w = 540
+        h = max(275, self.hud_frame.winfo_reqheight() + 10)
+        
+        # 画面中央に配置
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        x = max(0, (screen_w - w) // 2)
+        y = max(0, (screen_h - h) // 2)
+
+        self.root.minsize(w, h)
+        self.root.maxsize(w, 9999)
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
+        self._update_hud_display()
+
     def _build_file_section(self, parent):
         """グループ 1: 対象ファイル / 入力エリア"""
-        card = self._create_group_box(parent, "対象フォルダ / ファイル (ドラッグ&ドロップ対応)")
+        card = self._create_group_box(parent, "対象動画")
         self.file_card = card
 
         path_row = tk.Frame(card, bg=COLORS["bg_card"])
@@ -962,22 +1071,22 @@ class QuickCompressorApp:
         self.file_path_var = tk.StringVar(value="")
         self.file_entry = tk.Entry(
             path_row, textvariable=self.file_path_var,
-            font=(APP_FONT, 11), bg=COLORS["bg_input"], fg=COLORS["text"],
+            font=(APP_FONT, 10), bg=COLORS["bg_input"], fg=COLORS["text"],
             relief="flat", highlightbackground=COLORS["border_light"], highlightthickness=1,
             insertbackground=COLORS["text"]
         )
-        self.file_entry.pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 8))
+        self.file_entry.pack(side="left", fill="x", expand=True, ipady=4, padx=(0, 8))
 
-        self._create_btn(path_row, "ファイル選択", self._select_file).pack(side="left", padx=(0, 6))
-        self._create_btn(path_row, "クリア", self._clear_input).pack(side="left")
+        self._create_btn(path_row, "ファイル選択", self._select_file, padx=10, pady=4, font_size=10).pack(side="left", padx=(0, 6))
+        self._create_btn(path_row, "クリア", self._clear_input, padx=10, pady=4, font_size=10).pack(side="left")
 
         # 下部：動画詳細情報バッジ
         self.file_info_row = tk.Frame(card, bg=COLORS["bg_card"])
-        self.file_info_row.pack(fill="x", pady=(10, 0))
+        self.file_info_row.pack(fill="x", pady=(8, 0))
 
         self.file_count_label = tk.Label(
             self.file_info_row, text="対象動画: 0 件",
-            font=(APP_FONT, 11, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"]
+            font=(APP_FONT, 10, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"]
         )
         self.file_count_label.pack(side="left")
 
@@ -985,7 +1094,7 @@ class QuickCompressorApp:
             self.file_info_row, text="",
             font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
         )
-        self.file_detail_label.pack(side="left", padx=(10, 0))
+        self.file_detail_label.pack(side="left", padx=(12, 0))
 
         if self.input_path:
             self._update_file_info_display()
@@ -1024,6 +1133,43 @@ class QuickCompressorApp:
             if hasattr(self, 'file_detail_label'):
                 self.file_detail_label.configure(text="")
 
+        self._update_hud_display()
+
+    def _update_hud_display(self):
+        """HUDミニ画面の表示内容を更新"""
+        if not hasattr(self, 'hud_file_label'):
+            return
+        if hasattr(self, 'input_paths') and len(self.input_paths) > 1:
+            self.hud_file_label.configure(text=f"対象: {len(self.input_paths)} 件の動画一括処理")
+            if hasattr(self, 'hud_reduction_label'):
+                self.hud_reduction_label.configure(text="複数ファイル一括圧縮処理中")
+        elif self.input_path:
+            p = Path(self.input_path)
+            fname = p.name
+            if len(fname) > 26:
+                fname = fname[:23] + "..."
+            orig_sz_str = format_filesize(self.video_info.get("filesize", 0)) if self.video_info else ""
+            self.hud_file_label.configure(text=f"対象: {fname} ({orig_sz_str})")
+
+            # 削減予測の表示
+            if self._target_size_mb and self.video_info and self.video_info.get("filesize", 0) > 0:
+                target_bytes = self._target_size_mb * 1024 * 1024
+                orig_b = self.video_info.get("filesize", 1)
+                saved_ratio = max(0.0, (1.0 - (target_bytes / orig_b)) * 100)
+                if hasattr(self, 'hud_reduction_label'):
+                    self.hud_reduction_label.configure(
+                        text=f"容量削減見込み: {orig_sz_str} -> {self._target_size_mb:.1f} MB (-{saved_ratio:.1f}%)"
+                    )
+            elif hasattr(self, 'hud_reduction_label'):
+                cq_val = getattr(self, '_init_cq', 25)
+                self.hud_reduction_label.configure(
+                    text=f"元容量: {orig_sz_str} (品質優先 CQ {cq_val})"
+                )
+        else:
+            self.hud_file_label.configure(text="対象: なし")
+            if hasattr(self, 'hud_reduction_label'):
+                self.hud_reduction_label.configure(text="ファイルが選択されていません")
+
     def _clear_input(self):
         """入力ファイルをクリア"""
         self.input_path = None
@@ -1036,25 +1182,33 @@ class QuickCompressorApp:
         """グループ 2: 変換モード / プリセット"""
         card = self._create_group_box(parent, "変換モード / プリセット")
 
-        # 1行目: プリセット選択プルダウン（常時表示）
-        preset_row = tk.Frame(card, bg=COLORS["bg_card"])
-        preset_row.pack(fill="x", pady=(0, 10))
+        # 1行目: プリセット見出し ＆ 新規プリセット保存ボタン
+        preset_header_row = tk.Frame(card, bg=COLORS["bg_card"])
+        preset_header_row.pack(fill="x", pady=(0, 6))
 
-        tk.Label(preset_row, text="プリセット:", font=(APP_FONT, 11, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 8))
+        tk.Label(
+            preset_header_row, text="プリセット選択:",
+            font=(APP_FONT, 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
+        ).pack(side="left")
+        
+        self.preset_btn = self._create_btn(
+            preset_header_row, "新規プリセット保存", self._toggle_preset_mode,
+            fg=COLORS["success"], font_size=10, padx=12, pady=3
+        )
+        self.preset_btn.pack(side="right")
+
+        # 2行目: プリセット選択プルダウン（カードの左端から右端まで100%フル幅展開）
         self.apply_preset_var = tk.StringVar(value="選択してください...")
         self.preset_apply_combo = ttk.Combobox(
-            preset_row, textvariable=self.apply_preset_var,
-            state="readonly", font=(APP_FONT, 11), width=28
+            card, textvariable=self.apply_preset_var,
+            state="readonly", font=(APP_FONT, 11), height=16
         )
-        self.preset_apply_combo.pack(side="left", padx=(0, 10))
+        self.preset_apply_combo.pack(fill="x", pady=(0, 10))
         self.preset_apply_combo.bind("<<ComboboxSelected>>", self._on_preset_apply_select)
-
-        self.preset_btn = self._create_btn(preset_row, "新規プリセット保存", self._toggle_preset_mode, fg=COLORS["success"], font_size=10)
-        self.preset_btn.pack(side="left")
 
         # 2行目: ラジオボタン行 (容量優先 / 割合指定 / 品質優先)
         radio_row = tk.Frame(card, bg=COLORS["bg_card"])
-        radio_row.pack(fill="x", pady=(0, 10))
+        radio_row.pack(fill="x", pady=(0, 8))
 
         self.mode_var = tk.StringVar(value="cq" if not self._target_size_mb else "size")
 
@@ -1066,12 +1220,12 @@ class QuickCompressorApp:
         for text, val in modes:
             rb = tk.Radiobutton(
                 radio_row, text=text, variable=self.mode_var, value=val,
-                font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+                font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"],
                 selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_card"],
                 activeforeground=COLORS["accent"],
                 command=self._on_mode_change
             )
-            rb.pack(side="left", padx=(0, 18))
+            rb.pack(side="left", padx=(0, 16))
 
         # 3行目: モードごとの設定コンテナ
         self.mode_content_frame = tk.Frame(card, bg=COLORS["bg_card"])
@@ -1081,56 +1235,67 @@ class QuickCompressorApp:
         self.size_frame = tk.Frame(self.mode_content_frame, bg=COLORS["bg_card"])
         s_row = tk.Frame(self.size_frame, bg=COLORS["bg_card"])
         s_row.pack(anchor="w", fill="x")
-        tk.Label(s_row, text="目標サイズ:", font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 8))
-        self.target_size_var = tk.StringVar(value=str(self._target_size_mb) if self._target_size_mb else "10")
-        self.target_size_var.trace_add("write", lambda *a: self._check_resolution_warning())
-        self.size_combo = ttk.Combobox(
+        tk.Label(s_row, text="目標サイズ:", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 8))
+        self.target_size_var = tk.StringVar(value=str(int(self._target_size_mb)) if self._target_size_mb else "25")
+        self.target_size_entry = tk.Entry(
             s_row, textvariable=self.target_size_var,
-            values=["8", "10", "25", "30", "50", "100"],
-            font=(APP_FONT, 11), width=8
+            font=(APP_FONT, 10), bg=COLORS["bg_input"], fg=COLORS["text"],
+            width=6, relief="flat", highlightbackground=COLORS["border_light"], highlightthickness=1,
+            insertbackground=COLORS["text"]
         )
-        self.size_combo.pack(side="left")
-        tk.Label(s_row, text=" MB", font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(4, 14))
-        tk.Label(s_row, text="※ Discord (10MB) や Steam (30MB) 等の制限に合わせて自動計算", font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"]).pack(side="left")
+        self.target_size_entry.pack(side="left", padx=(0, 6), ipady=3)
+        tk.Label(s_row, text="MB", font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 10))
+
+        # プリセットボタン (10MB / 25MB / 50MB / 100MB)
+        for mb in [10, 25, 50, 100]:
+            self._create_btn(
+                s_row, f"{mb}MB", lambda v=mb: self.target_size_var.set(str(v)),
+                padx=8, pady=2, font_size=9
+            ).pack(side="left", padx=(0, 4))
 
         # --- 割合指定 ---
         self.percent_frame = tk.Frame(self.mode_content_frame, bg=COLORS["bg_card"])
         p_row = tk.Frame(self.percent_frame, bg=COLORS["bg_card"])
         p_row.pack(anchor="w", fill="x")
-        tk.Label(p_row, text="目標割合:", font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 8))
-        self.target_percent_var = tk.StringVar(value="50")
-        self.target_percent_var.trace_add("write", lambda *a: self._check_resolution_warning())
-        self.percent_combo = ttk.Combobox(
-            p_row, textvariable=self.target_percent_var,
-            values=["25", "30", "50", "75", "80"],
-            font=(APP_FONT, 11), width=8
+        tk.Label(p_row, text="目標サイズ割合:", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 8))
+        self.percent_var = tk.IntVar(value=50)
+        self.target_percent_var = self.percent_var
+        self.percent_slider = ttk.Scale(
+            p_row, from_=10, to=90, variable=self.percent_var,
+            command=self._on_percent_change, style="Custom.Horizontal.TScale"
         )
-        self.percent_combo.pack(side="left")
-        tk.Label(p_row, text=" %", font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(4, 14))
-        tk.Label(p_row, text="※ 元のファイルサイズから指定割合に収まるように自動計算", font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"]).pack(side="left")
+        self.percent_slider.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.percent_slider.bind("<MouseWheel>", self._on_percent_mousewheel)
+        self.percent_label = tk.Label(
+            p_row, text="50%", font=(APP_FONT, 10, "bold"),
+            fg=COLORS["accent"], bg=COLORS["bg_card"], width=6, anchor="w"
+        )
+        self.percent_label.pack(side="left")
+        self.percent_label.bind("<MouseWheel>", self._on_percent_mousewheel)
 
-        # --- 品質優先 (CQ / QVBR) ---
+        # --- 品質優先 (CQ) ---
         self.cq_frame = tk.Frame(self.mode_content_frame, bg=COLORS["bg_card"])
         q_row = tk.Frame(self.cq_frame, bg=COLORS["bg_card"])
-        q_row.pack(fill="x")
-        tk.Label(q_row, text="品質 (CRF/CQ/QVBR):", font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 10))
+        q_row.pack(anchor="w", fill="x")
+        tk.Label(q_row, text="品質レベル:", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 8))
         self.quality_var = tk.IntVar(value=self._init_cq)
         self.quality_slider = ttk.Scale(
-            q_row, from_=15, to=40, orient="horizontal",
-            variable=self.quality_var,
-            command=self._on_quality_change
+            q_row, from_=15, to=40, variable=self.quality_var,
+            command=lambda v: self._on_quality_change(int(float(v))), style="Custom.Horizontal.TScale"
         )
-        self.quality_slider.pack(side="left", fill="x", expand=True, padx=(0, 14))
+        self.quality_slider.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.quality_slider.bind("<MouseWheel>", self._on_quality_mousewheel)
         self.quality_value_label = tk.Label(
             q_row, text="CQ 25 (高画質)",
-            font=(APP_FONT, 11, "bold"), fg=COLORS["success"], bg=COLORS["bg_card"], width=14, anchor="w"
+            font=(APP_FONT, 10, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"], width=13, anchor="w"
         )
         self.quality_value_label.pack(side="left")
+        self.quality_value_label.bind("<MouseWheel>", self._on_quality_mousewheel)
         self.quality_desc_label = tk.Label(
             self.cq_frame, text="※ CQ/QVBR値が低いほど高画質・大ファイル、高いほど低画質・小ファイルになります",
-            font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
+            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
         )
-        self.quality_desc_label.pack(anchor="w", pady=(4, 0))
+        self.quality_desc_label.pack(anchor="w", pady=(3, 0))
 
         self.root.after(100, self._update_apply_preset_list)
         self._on_mode_change()
@@ -1139,38 +1304,66 @@ class QuickCompressorApp:
         """グループ 3: 詳細設定"""
         card = self._create_group_box(parent, "詳細設定")
 
-        # 1行目: 出力コーデック、フレームレート、解像度
+        # 1行目: 出力コーデック & 解像度
         row1 = tk.Frame(card, bg=COLORS["bg_card"])
-        row1.pack(fill="x", pady=(0, 10))
+        row1.pack(fill="x", pady=(0, 8))
 
         # 出力コーデック
-        tk.Label(row1, text="出力コーデック:", font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 6))
+        tk.Label(row1, text="出力コーデック:", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 6))
         self.codec_var = tk.StringVar(value=self._init_codec)
         codec_combo = ttk.Combobox(row1, textvariable=self.codec_var,
                                    values=list(CODECS.keys()), state="readonly",
-                                   font=(APP_FONT, 11), width=24)
+                                   font=(APP_FONT, 10), width=24, height=10)
         codec_combo.pack(side="left", padx=(0, 16))
 
-        # フレームレート
-        tk.Label(row1, text="FPS:", font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 6))
-        self.fps_var = tk.StringVar(value=self._init_fps)
-        fps_combo = ttk.Combobox(row1, textvariable=self.fps_var,
-                                 values=FRAME_RATES, state="readonly",
-                                 font=(APP_FONT, 11), width=8)
-        fps_combo.pack(side="left", padx=(0, 16))
-
         # 解像度
-        tk.Label(row1, text="解像度:", font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 6))
+        tk.Label(row1, text="解像度:", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 6))
         self.resolution_var = tk.StringVar(value=self._init_resolution)
         self.resolution_var.trace_add("write", lambda *a: self._on_resolution_change())
         resolution_combo = ttk.Combobox(row1, textvariable=self.resolution_var,
                                         values=RESOLUTIONS, state="readonly",
-                                        font=(APP_FONT, 11), width=8)
+                                        font=(APP_FONT, 10), width=9, height=8)
         resolution_combo.pack(side="left")
 
-        # 2行目: 解像度プレビュー
+        # 2行目: FPS (フレームレート) ボタングループ
+        row2_fps = tk.Frame(card, bg=COLORS["bg_card"])
+        row2_fps.pack(fill="x", pady=(0, 8))
+
+        tk.Label(row2_fps, text="FPS (フレームレート):", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 10))
+
+        self.fps_var = tk.StringVar(value=self._init_fps)
+        self.fps_buttons = {}
+
+        for fps_opt in FRAME_RATES:
+            btn = self._create_btn(
+                row2_fps, fps_opt, lambda v=fps_opt: self.fps_var.set(v),
+                padx=10, pady=2, font_size=9
+            )
+            btn.pack(side="left", padx=(0, 5))
+            self.fps_buttons[fps_opt] = btn
+
+        def _update_fps_button_styles(*_):
+            cur_fps = self.fps_var.get()
+            for opt, b in self.fps_buttons.items():
+                if opt == cur_fps:
+                    b.configure(
+                        bg=COLORS["accent"], fg=COLORS["text_bright"],
+                        activebackground=COLORS["accent_hover"], activeforeground=COLORS["text_bright"],
+                        highlightbackground=COLORS["accent"]
+                    )
+                else:
+                    b.configure(
+                        bg=COLORS["bg_btn"], fg=COLORS["text"],
+                        activebackground=COLORS["bg_btn_hover"], activeforeground=COLORS["text_bright"],
+                        highlightbackground=COLORS["border_light"]
+                    )
+
+        self.fps_var.trace_add("write", _update_fps_button_styles)
+        _update_fps_button_styles()
+
+        # 3行目: 解像度プレビュー
         row2 = tk.Frame(card, bg=COLORS["bg_card"])
-        row2.pack(fill="x", pady=(0, 8))
+        row2.pack(fill="x", pady=(0, 6))
         self.resolution_preview_label = tk.Label(
             row2, text="解像度変換: -",
             font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
@@ -1182,7 +1375,7 @@ class QuickCompressorApp:
         )
         self.resolution_warning_label.pack(side="left", padx=(10, 0))
 
-        # 3行目: チェックボックス (音声、元ファイル削除)
+        # 4行目: チェックボックス (音声、元ファイル削除)
         row3 = tk.Frame(card, bg=COLORS["bg_card"])
         row3.pack(fill="x")
 
@@ -1190,17 +1383,17 @@ class QuickCompressorApp:
         self.audio_check_btn = tk.Checkbutton(
             row3, text="音声を含める",
             variable=self.audio_var,
-            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"],
             selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_card"],
             activeforeground=COLORS["accent"],
         )
-        self.audio_check_btn.pack(side="left", padx=(0, 20))
+        self.audio_check_btn.pack(side="left", padx=(0, 18))
 
         self.auto_delete_var = tk.BooleanVar(value=False)
         self.auto_delete_check_btn = tk.Checkbutton(
             row3, text="変換後に元ファイルを自動でゴミ箱へ移動",
             variable=self.auto_delete_var,
-            font=(APP_FONT, 11), fg=COLORS["text"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"],
             selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_card"],
             activeforeground=COLORS["accent"],
         )
@@ -1210,23 +1403,22 @@ class QuickCompressorApp:
         self._on_quality_change(self._init_cq)
 
     def _build_progress_section(self, parent):
-        """グループ 4: 進行状況"""
-        card = self._create_group_box(parent, "進行状況")
+        """グループ 4: 進行状況 & HUD計器表示"""
+        card = self._create_group_box(parent, "進行状況 & 計器")
 
-        self.progress_var = tk.DoubleVar(value=0)
         self.progress_bar = ttk.Progressbar(
             card, variable=self.progress_var,
             maximum=100, style="Custom.Horizontal.TProgressbar"
         )
-        self.progress_bar.pack(fill="x", pady=(0, 8))
+        self.progress_bar.pack(fill="x", pady=(0, 6))
 
         # ステータス行 (左: 変換進捗・結果, 右: GPU 3D/Encode使用率バッジ)
         status_row = tk.Frame(card, bg=COLORS["bg_card"])
         status_row.pack(fill="x")
 
         self.gpu_status_label = tk.Label(
-            status_row, text="",
-            font=(APP_FONT, 9, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"],
+            status_row, text="3D:  0.0%  |  Encode:  0.0%",
+            font=(APP_FONT, 10, "bold"), fg=COLORS["accent_cyan"], bg=COLORS["bg_card"],
             anchor="e"
         )
         self.gpu_status_label.pack(side="right", padx=(8, 0))
@@ -1247,42 +1439,41 @@ class QuickCompressorApp:
         left_f = tk.Frame(bar, bg=COLORS["bg_dark"])
         left_f.pack(side="left")
 
-        self._create_btn(left_f, "⚙ 設定", self._open_settings).pack(side="left", padx=(0, 6))
-        self._create_btn(left_f, "📋 プリセット管理", self._open_preset_manager).pack(side="left", padx=(0, 6))
-        self._create_btn(left_f, "右クリックメニュー設定", self._open_context_menu_dialog).pack(side="left")
+        self._create_btn(left_f, "設定", self._open_settings, font_size=10, padx=10, pady=5).pack(side="left", padx=(0, 6))
+        self._create_btn(left_f, "プリセット管理", self._open_preset_manager, font_size=10, padx=10, pady=5).pack(side="left")
 
         # 右側アクションボタングループ
         right_f = tk.Frame(bar, bg=COLORS["bg_dark"])
         right_f.pack(side="right")
 
         self.delete_btn = self._create_btn(
-            right_f, "🗑 元ファイルを削除", self._delete_original_file,
-            fg=COLORS["error"], padx=12, pady=6
+            right_f, "元ファイルを削除", self._delete_original_file,
+            fg=COLORS["error"], padx=12, pady=5, font_size=10
         )
 
         self.open_btn = self._create_btn(
             right_f, "フォルダを開く", self._open_output_folder,
-            fg=COLORS["text"], padx=12, pady=6
+            fg=COLORS["text"], padx=12, pady=5, font_size=10
         )
 
         self.cancel_btn = tk.Button(
             right_f, text="中止",
-            font=(APP_FONT, 11, "bold"), fg=COLORS["text_bright"],
-            bg=COLORS["error"], activebackground="#b91c1c",
-            relief="flat", cursor="hand2", padx=18, pady=7,
+            font=(APP_FONT, 10, "bold"), fg=COLORS["text_bright"],
+            bg=COLORS["error"], activebackground="#e11d48",
+            relief="flat", cursor="hand2", padx=16, pady=5,
             command=self._cancel_conversion, bd=0
         )
 
         self.convert_btn = tk.Button(
-            right_f, text="⚡ 圧縮開始",
-            font=(APP_FONT, 12, "bold"), fg=COLORS["text_bright"],
+            right_f, text="圧縮開始",
+            font=(APP_FONT, 11, "bold"), fg=COLORS["text_bright"],
             bg=COLORS["accent"], activebackground=COLORS["accent_hover"],
             activeforeground=COLORS["text_bright"],
             disabledforeground=COLORS["text_dim"],
-            relief="flat", cursor="hand2", padx=24, pady=7,
+            relief="flat", cursor="hand2", padx=20, pady=5,
             command=self._start_conversion, bd=0
         )
-        self.convert_btn.pack(side="right", padx=(8, 0))
+        self.convert_btn.pack(side="right", padx=(6, 0))
 
         self._update_ui_state()
 
@@ -1356,10 +1547,13 @@ class QuickCompressorApp:
     def _toggle_topmost(self):
         self.is_topmost = not self.is_topmost
         self.root.attributes("-topmost", self.is_topmost)
-        if self.is_topmost:
-            self.pin_btn.configure(fg=COLORS["accent"], bg=COLORS["bg_input"], text="📍 固定中")
-        else:
-            self.pin_btn.configure(fg=COLORS["text_dim"], bg=COLORS["bg_btn"], text="📌 最前面")
+        txt = "固定解除" if self.is_topmost else "最前面固定"
+        fg_col = COLORS["accent"] if self.is_topmost else COLORS["text_dim"]
+        bg_col = COLORS["bg_input"] if self.is_topmost else COLORS["bg_btn"]
+        if hasattr(self, 'pin_btn'):
+            self.pin_btn.configure(fg=fg_col, bg=bg_col, text=txt)
+        if hasattr(self, 'hud_pin_btn'):
+            self.hud_pin_btn.configure(fg=fg_col, bg=bg_col, text=txt)
 
     def _on_drop_enter(self, event):
         if getattr(self, 'is_converting', False):
@@ -1377,12 +1571,8 @@ class QuickCompressorApp:
         inner_frame.pack(expand=True)
         inner_frame.bind("<ButtonPress-1>", lambda e: self._close_drop_overlay())
 
-        lbl_icon = tk.Label(inner_frame, text="📥", font=(APP_FONT, 36), fg=COLORS["accent"], bg=COLORS["bg_dark"])
-        lbl_icon.pack()
-        lbl_icon.bind("<ButtonPress-1>", lambda e: self._close_drop_overlay())
-
-        lbl_txt = tk.Label(inner_frame, text="ここに動画ファイルをドロップ", font=(APP_FONT, 14, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"])
-        lbl_txt.pack(pady=8)
+        lbl_txt = tk.Label(inner_frame, text="[ ここに動画ファイルをドロップ ]", font=(APP_FONT, 12, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"])
+        lbl_txt.pack(pady=12)
         lbl_txt.bind("<ButtonPress-1>", lambda e: self._close_drop_overlay())
 
         if HAS_DND:
@@ -1491,23 +1681,23 @@ class QuickCompressorApp:
         self.queue_panel = tk.Frame(parent, bg=COLORS["bg_dark"])
         self.queue_panel.pack(side="left", fill="y")
         self.queue_panel.pack_propagate(False)
-        self.queue_panel.configure(width=190)
+        self.queue_panel.configure(width=220)
 
         pad = tk.Frame(self.queue_panel, bg=COLORS["bg_dark"])
-        pad.pack(fill="both", expand=True, padx=10, pady=16)
+        pad.pack(fill="both", expand=True, padx=10, pady=12)
 
         # ヘッダー行
         header_row = tk.Frame(pad, bg=COLORS["bg_dark"])
         header_row.pack(fill="x", pady=(0, 8))
 
         tk.Label(
-            header_row, text="📋 変換キュー",
-            font=(APP_FONT, 11, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+            header_row, text="変換キュー",
+            font=(APP_FONT, 10, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(side="left")
 
         self._queue_count_label = tk.Label(
             header_row, text="",
-            font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
+            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_dark"]
         )
         self._queue_count_label.pack(side="right")
 
@@ -1543,20 +1733,42 @@ class QuickCompressorApp:
         # 下部サマリーラベル
         self._queue_summary_label = tk.Label(
             pad, text="ファイルを追加してください",
-            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_dark"],
-            justify="left", anchor="w"
-        )
-        self._queue_summary_label.pack(anchor="w", pady=(8, 0))
-
-        # ヒントラベル
-        self._queue_hint_label = tk.Label(
-            pad, text="ファイルをクリックして個別設定",
             font=(APP_FONT, 8), fg=COLORS["text_dim"], bg=COLORS["bg_dark"],
             justify="left", anchor="w"
         )
-        self._queue_hint_label.pack(anchor="w", pady=(2, 0))
+        self._queue_summary_label.pack(anchor="w", pady=(6, 0))
+
+        # ヒントラベル
+        self._queue_hint_label = tk.Label(
+            pad, text="クリックして個別設定",
+            font=(APP_FONT, 8), fg=COLORS["text_dim"], bg=COLORS["bg_dark"],
+            justify="left", anchor="w"
+        )
+        self._queue_hint_label.pack(anchor="w", pady=(1, 0))
 
         self._refresh_queue_display()
+
+    def _update_queue_panel_visibility(self):
+        """2個以上のファイルが存在する場合のみ変換キューパネルを表示し、1個以下の場合は非表示にしてコンパクト化"""
+        if getattr(self, '_is_hud_mode', False):
+            return
+        count = len(getattr(self, 'input_paths', []))
+        if not hasattr(self, 'queue_panel') or not hasattr(self, 'queue_separator'):
+            return
+
+        if count >= 2:
+            self.queue_separator.pack(side="left", fill="y")
+            self.queue_panel.pack(side="left", fill="y")
+        else:
+            self.queue_panel.pack_forget()
+            self.queue_separator.pack_forget()
+
+        self.root.update_idletasks()
+        req_w = self.root.winfo_reqwidth()
+        req_h = self.root.winfo_reqheight()
+        self.root.minsize(req_w, req_h)
+        self.root.maxsize(req_w, 9999)
+        self.root.geometry(f"{req_w}x{req_h}")
 
     def _on_queue_inner_configure(self, event):
         self._queue_canvas.configure(scrollregion=self._queue_canvas.bbox("all"))
@@ -1580,6 +1792,7 @@ class QuickCompressorApp:
                 }
         self._queue_data = new_queue
         self._refresh_queue_display()
+        self._update_queue_panel_visibility()
 
     def _setup_settings_traces(self):
         """UI変数変更時のリアルタイム設定同期トレースを設定する"""
@@ -1648,11 +1861,11 @@ class QuickCompressorApp:
                 self._queue_empty_label.pack_forget()
 
         STATUS_MAP = {
-            "waiting":    ("⏳", COLORS["text_dim"]),
-            "converting": ("⚡", COLORS["accent"]),
-            "done":       ("✅", COLORS["success"]),
-            "error":      ("❌", COLORS["error"]),
-            "cancelled":  ("✖",  COLORS["warning"]),
+            "waiting":    ("[待機]", COLORS["text_dim"]),
+            "converting": ("[変換]", COLORS["accent"]),
+            "done":       ("[完了]", COLORS["success"]),
+            "error":      ("[失敗]", COLORS["error"]),
+            "cancelled":  ("[中止]", COLORS["warning"]),
         }
 
         # 存在しなくなったパスのキャッシュウィジェット破棄
@@ -1680,7 +1893,7 @@ class QuickCompressorApp:
         for i, path in enumerate(current_paths):
             data = self._queue_data.get(path, {"status": "waiting", "progress": 0.0})
             status = data.get("status", "waiting")
-            icon, icon_color = STATUS_MAP.get(status, ("⏳", COLORS["text_dim"]))
+            icon, icon_color = STATUS_MAP.get(status, ("[待機]", COLORS["text_dim"]))
             is_selected = (path == selected_path)
             bg_color = COLORS["selected_bg"] if is_selected else COLORS["bg_card"]
 
@@ -1693,8 +1906,8 @@ class QuickCompressorApp:
                 row1 = tk.Frame(item_frame, bg=bg_color)
                 row1.pack(fill="x")
 
-                icon_lbl = tk.Label(row1, text=icon, font=(APP_FONT, 10), fg=icon_color, bg=bg_color)
-                icon_lbl.pack(side="left", padx=(4, 3))
+                icon_lbl = tk.Label(row1, text=icon, font=(APP_FONT, 9), fg=icon_color, bg=bg_color)
+                icon_lbl.pack(side="left", padx=(3, 2))
 
                 filename = Path(path).name
                 MAX_LEN = 13
@@ -1703,15 +1916,15 @@ class QuickCompressorApp:
                     stem_len = MAX_LEN - len(ext) - 3
                     filename = Path(path).stem[:stem_len] + "..." + ext if stem_len > 0 else filename[:MAX_LEN - 3] + "..."
 
-                name_lbl = tk.Label(row1, text=filename, font=(APP_FONT, 10, "bold"), fg=COLORS["text"], bg=bg_color, anchor="w")
-                name_lbl.pack(side="left", fill="x", expand=True, padx=(0, 4))
+                name_lbl = tk.Label(row1, text=filename, font=(APP_FONT, 9, "bold"), fg=COLORS["text"], bg=bg_color, anchor="w")
+                name_lbl.pack(side="left", fill="x", expand=True, padx=(0, 2))
 
                 row2 = tk.Frame(item_frame, bg=bg_color)
-                row2.pack(fill="x", padx=(20, 6), pady=(1, 3))
+                row2.pack(fill="x", padx=(16, 4), pady=(1, 2))
 
                 pb = ttk.Progressbar(row2, maximum=100, value=0, style="Custom.Horizontal.TProgressbar")
-                status_lbl = tk.Label(row2, text="", font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=bg_color, anchor="w")
-                pct_lbl = tk.Label(row2, text="0%", font=(APP_FONT, 9), fg=COLORS["accent"], bg=bg_color, anchor="w")
+                status_lbl = tk.Label(row2, text="", font=(APP_FONT, 8), fg=COLORS["text_dim"], bg=bg_color, anchor="w")
+                pct_lbl = tk.Label(row2, text="0%", font=(APP_FONT, 8), fg=COLORS["accent"], bg=bg_color, anchor="w")
 
                 cache = {
                     "sep": sep, "outer": outer, "accent_line": accent_line, "item_frame": item_frame,
@@ -1809,8 +2022,8 @@ class QuickCompressorApp:
             if is_converting: self._queue_hint_label.configure(text="")
             elif selected_path:
                 fname = Path(selected_path).stem[:10] + ("…" if len(Path(selected_path).stem) > 10 else "")
-                self._queue_hint_label.configure(text=f"⚙️ {fname} の設定中", fg=COLORS["accent"])
-            else: self._queue_hint_label.configure(text="💡 項目クリックで個別に設定", fg=COLORS["text_dim"])
+                self._queue_hint_label.configure(text=f"{fname} の設定中", fg=COLORS["accent"])
+            else: self._queue_hint_label.configure(text="項目クリックで個別に設定", fg=COLORS["text_dim"])
 
         self._queue_canvas.configure(scrollregion=self._queue_canvas.bbox("all"))
 
@@ -1919,7 +2132,7 @@ class QuickCompressorApp:
 
         win = tk.Toplevel(self.root)
         self._settings_window = win
-        win.title("⚙ 詳細設定")
+        win.title("詳細設定")
         win.configure(bg=COLORS["bg_dark"])
         win.resizable(False, False)
         win.transient(self.root)
@@ -1945,25 +2158,25 @@ class QuickCompressorApp:
         win.bind("<B1-Motion>", win_dragging)
 
         # ウィンドウ初期サイズ（縦長になりすぎないコンパクトな高さ）
-        win_w, win_h = 580, 560
+        win_w, win_h = 560, 520
         win.geometry(f"{win_w}x{win_h}")
 
         # --- 上部固定ヘッダー ---
-        top_bar = tk.Frame(win, bg=COLORS["bg_dark"], padx=20, pady=14)
+        top_bar = tk.Frame(win, bg=COLORS["bg_dark"], padx=16, pady=10)
         top_bar.pack(fill="x")
 
         tk.Label(
-            top_bar, text="⚙ 詳細設定",
-            font=(APP_FONT, 15, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+            top_bar, text="詳細設定",
+            font=(APP_FONT, 12, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(side="left")
 
         # --- 下部固定フッター（閉じるボタン） ---
-        bottom_bar = tk.Frame(win, bg=COLORS["bg_dark"], padx=20, pady=12)
+        bottom_bar = tk.Frame(win, bg=COLORS["bg_dark"], padx=16, pady=8)
         bottom_bar.pack(side="bottom", fill="x")
 
         # --- 中央スクロール領域 ---
         scroll_container = tk.Frame(win, bg=COLORS["bg_dark"])
-        scroll_container.pack(fill="both", expand=True, padx=(16, 4), pady=(0, 4))
+        scroll_container.pack(fill="both", expand=True, padx=(12, 4), pady=(0, 4))
 
         scrollbar = ttk.Scrollbar(scroll_container, orient="vertical", style="Vertical.TScrollbar")
         scrollbar.pack(side="right", fill="y")
@@ -2012,30 +2225,30 @@ class QuickCompressorApp:
                 pass
                 
         if total_saved >= 0:
-            stats_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
+            stats_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=10, pady=8,
                                    highlightbackground=COLORS["success"], highlightthickness=1)
-            stats_card.pack(fill="x", pady=(0, 10))
+            stats_card.pack(fill="x", pady=(0, 8))
             
             tk.Label(
-                stats_card, text="📊 統計情報",
-                font=(APP_FONT, 11), fg=COLORS["success"], bg=COLORS["bg_card"]
+                stats_card, text="統計情報",
+                font=(APP_FONT, 10, "bold"), fg=COLORS["success"], bg=COLORS["bg_card"]
             ).pack(anchor="w")
             
             tk.Label(
                 stats_card, text=f"これまでの累計節約容量： {format_filesize(total_saved)}",
-                font=(APP_FONT, 12), fg=COLORS["text"], bg=COLORS["bg_card"]
-            ).pack(anchor="w", pady=(4, 0))
+                font=(APP_FONT, 9), fg=COLORS["text"], bg=COLORS["bg_card"]
+            ).pack(anchor="w", pady=(2, 0))
 
             total_files = config_data.get("total_converted_files", 0) if 'config_data' in locals() else 0
             tk.Label(
                 stats_card, text=f"これまでの累計変換数： {total_files} 個",
-                font=(APP_FONT, 12), fg=COLORS["text"], bg=COLORS["bg_card"]
-            ).pack(anchor="w", pady=(2, 0))
+                font=(APP_FONT, 9), fg=COLORS["text"], bg=COLORS["bg_card"]
+            ).pack(anchor="w", pady=(1, 0))
 
         # --- エンコードプリセット ---
-        preset_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=12, pady=10,
+        preset_card = tk.Frame(pad, bg=COLORS["bg_card"], padx=10, pady=8,
                                highlightbackground=COLORS["border"], highlightthickness=1)
-        preset_card.pack(fill="x", pady=(0, 10))
+        preset_card.pack(fill="x", pady=(0, 8))
 
         tk.Label(
             preset_card, text="エンコードプリセット",
@@ -2572,9 +2785,33 @@ class QuickCompressorApp:
                         rec_res = ""
                     
                     if required_kbps > 0 and video_kbps < required_kbps:
-                        warning_text = f"⚠️ 目標容量が小さいため、現在の解像度では容量オーバーになる可能性が高いです。\n    {rec_res}への変更を推奨します。"
+                        warning_text = f"[警告] 目標容量が小さいため、現在の解像度では容量オーバーになる可能性が高いです。\n    {rec_res}への変更を推奨します。"
                         
         self.resolution_warning_label.configure(text=warning_text)
+
+    def _on_percent_change(self, value):
+        p = int(float(value))
+        if hasattr(self, 'percent_label'):
+            self.percent_label.configure(text=f"{p}%")
+        self._check_resolution_warning()
+
+    def _on_percent_mousewheel(self, event):
+        """割合スライダー上でマウススクロールにより1%ずつ増減（上スクロールで減少、下スクロールで増加）"""
+        delta = -1 if event.delta > 0 else 1
+        cur_val = self.percent_var.get()
+        new_val = max(10, min(90, cur_val + delta))
+        if new_val != cur_val:
+            self.percent_var.set(new_val)
+            self._on_percent_change(new_val)
+
+    def _on_quality_mousewheel(self, event):
+        """CQ/QVBRスライダー上でマウススクロールにより1ずつ数値を増減（上スクロールで減少、下スクロールで増加）"""
+        delta = -1 if event.delta > 0 else 1
+        cur_val = self.quality_var.get()
+        new_val = max(15, min(40, cur_val + delta))
+        if new_val != cur_val:
+            self.quality_var.set(new_val)
+            self._on_quality_change(new_val)
 
     def _on_mode_change(self, *args):
         mode = self.mode_var.get()
@@ -2867,13 +3104,13 @@ class QuickCompressorApp:
             self.preset_banner.pack(fill="x", pady=(0, 16), before=self.title_frame)
             self.main_frame.configure(highlightbackground=COLORS["success"])
             self.convert_btn.configure(
-                text="💾 現在の設定をプリセットとして保存",
+                text="現在の設定をプリセットとして保存",
                 bg=COLORS["success"],
                 activebackground=COLORS["success_hover"],
                 state="normal"
             )
             self.preset_btn.configure(
-                text="✖ キャンセル",
+                text="キャンセル",
                 fg=COLORS["error"],
                 activeforeground=COLORS["error"]
             )
@@ -2883,13 +3120,13 @@ class QuickCompressorApp:
             bg_color = COLORS["accent"] if self.input_path else COLORS["bg_btn"]
             btn_state = "normal" if self.input_path else "disabled"
             self.convert_btn.configure(
-                text="⚡ 圧縮開始",
+                text="圧縮開始",
                 bg=bg_color,
                 activebackground=COLORS["accent_hover"],
                 state=btn_state
             )
             self.preset_btn.configure(
-                text="プリセット作成",
+                text="新規プリセット保存",
                 fg=COLORS["success"],
                 activeforeground=COLORS["success"]
             )
@@ -2921,7 +3158,7 @@ class QuickCompressorApp:
                 if default_codec_type == "AV1":
                     content = content.replace("HEVC / H.265", "AV1")
                 elif default_codec_type == "H.264":
-                    content = content.replace("HEVC / H.265", "H.264")
+                    content = content.replace("HEVC / H.264", "H.264")
                 # "HEVC" の場合は変換なし（デフォルトのまま）
 
                 default_presets = json.loads(content)
@@ -3018,7 +3255,7 @@ class QuickCompressorApp:
         action_frame.pack(fill="x")
 
         delete_btn = tk.Button(
-            action_frame, text="🗑 削除",
+            action_frame, text="削除",
             font=(APP_FONT, 9), fg=COLORS["error"], bg=COLORS["bg_card"],
             activebackground=COLORS["bg_input"], activeforeground=COLORS["error"],
             relief="flat", cursor="hand2", padx=12, pady=6,
@@ -3412,7 +3649,7 @@ class QuickCompressorApp:
         # 成功時のボタンを非表示にし、削除ボタンを初期化
         self.open_btn.pack_forget()
         self.delete_btn.pack_forget()
-        self.delete_btn.configure(text="🗑 元ファイルを削除", state="normal")
+        self.delete_btn.configure(text="元ファイルを削除", state="normal")
 
         self.convert_btn.configure(state="disabled", text="変換中...", bg=COLORS["bg_btn"])
         self.cancel_btn.pack(side="right", padx=(0, 8))
@@ -3443,11 +3680,16 @@ class QuickCompressorApp:
                     break
                 u_3d, u_enc = self._gpu_monitor.get_utilization()
                 def _update(d=u_3d, e=u_enc):
+                    is_conv = getattr(self, 'is_converting', False)
+                    fg_c = COLORS["accent"] if is_conv or e > 5.0 or d > 10.0 else COLORS["text_dim"]
                     if hasattr(self, 'gpu_status_label') and self.gpu_status_label.winfo_exists():
-                        is_conv = getattr(self, 'is_converting', False)
-                        fg_c = COLORS["accent"] if is_conv or e > 5.0 or d > 10.0 else COLORS["text_dim"]
                         self.gpu_status_label.configure(
                             text=f"3D: {d:4.1f}%  |  Encode: {e:4.1f}%",
+                            fg=fg_c
+                        )
+                    if hasattr(self, 'hud_gpu_label') and self.hud_gpu_label.winfo_exists():
+                        self.hud_gpu_label.configure(
+                            text=f"3D Engine: {d:4.1f}%  |  Video Encode: {e:4.1f}%",
                             fg=fg_c
                         )
                 if hasattr(self, 'root') and self.root:
@@ -3517,7 +3759,7 @@ class QuickCompressorApp:
                 self.root.after(0, self._on_batch_finished)
 
         except Exception as e:
-            self._update_status(f"❌ エラー: {str(e)}", color=COLORS["error"])
+            self._update_status(f"エラー: {str(e)}", color=COLORS["error"])
             self._show_error(str(e))
         finally:
             self.process = None
@@ -3526,7 +3768,7 @@ class QuickCompressorApp:
             def _reset_btn():
                 if hasattr(self, "cancel_btn"):
                     self.cancel_btn.pack_forget()
-                self.convert_btn.configure(state="normal", text="⚡ 圧縮開始", bg=COLORS["accent"])
+                self.convert_btn.configure(state="normal", text="圧縮開始", bg=COLORS["accent"])
             self.root.after(0, _reset_btn)
 
     def _execute_single_ffmpeg(self, settings: dict, fallback_encoder=None) -> tuple[bool, bool, str]:
@@ -3578,6 +3820,8 @@ class QuickCompressorApp:
                         speed_match = re.search(r"speed=\s*([\d.]+)x", line)
                         speed_text = f" ({speed_match.group(1)}x)" if speed_match else ""
                         eta_text = ""
+                        speed_str_short = f"{speed_match.group(1)}x" if speed_match else "-"
+                        eta_str_short = "-"
                         if speed_match:
                             try:
                                 speed_val = float(speed_match.group(1))
@@ -3585,7 +3829,8 @@ class QuickCompressorApp:
                                     eta_sec = max(0, (duration - current) / speed_val)
                                     eta_m = int(eta_sec // 60)
                                     eta_s = int(eta_sec % 60)
-                                    eta_text = f"  ⏳ 残り約 {eta_m}分{eta_s:02d}秒" if eta_m > 0 else f"  ⏳ 残り約 {eta_s}秒"
+                                    eta_text = f"  残り約 {eta_m}分{eta_s:02d}秒" if eta_m > 0 else f"  残り約 {eta_s}秒"
+                                    eta_str_short = f"{eta_m:02d}:{eta_s:02d}" if eta_m > 0 else f"00:{eta_s:02d}"
                             except ValueError:
                                 pass
 
@@ -3593,7 +3838,7 @@ class QuickCompressorApp:
                         status_str = f"変換中... {prefix_str}{progress:.1f}%{speed_text}{eta_text}  →  {Path(self.output_path).name}"
 
                         _fp = self.input_path
-                        self.root.after(0, lambda p=overall_progress, fp=_fp, p_item=progress, st=status_str: self._update_throttled_ui(p, fp, p_item, st))
+                        self.root.after(0, lambda p=overall_progress, fp=_fp, p_item=progress, st=status_str, sp=speed_str_short, et=eta_str_short: self._update_throttled_ui(p, fp, p_item, st, sp, et))
 
             self.process.wait()
             elapsed_time = time.time() - start_time
@@ -3640,18 +3885,31 @@ class QuickCompressorApp:
                     ratio = out_size / orig_size * 100
                     el = int(elapsed_time)
                     elapsed_str = f"{el // 60}分{el % 60:02d}秒" if el >= 60 else f"{el}秒"
-                    status_text = f"✅ 変換完了！  {format_filesize(orig_size)} → {format_filesize(out_size)}  ({ratio:.1f}% / 元サイズ)  ⏱ {elapsed_str}"
+                    status_text = f"変換完了: {format_filesize(orig_size)} → {format_filesize(out_size)} ({ratio:.1f}% / 元サイズ) 所要時間: {elapsed_str}"
+                    if hasattr(self, 'hud_reduction_label'):
+                        self.root.after(0, lambda o=orig_size, n=out_size, r=ratio: self.hud_reduction_label.configure(
+                            text=f"削減結果: {format_filesize(o)} -> {format_filesize(n)} (-{100-r:.1f}%)"
+                        ))
                 else:
                     el = int(elapsed_time)
                     elapsed_str = f"{el // 60}分{el % 60:02d}秒" if el >= 60 else f"{el}秒"
-                    status_text = f"✅ 変換完了！  {format_filesize(out_size)}  ⏱ {elapsed_str}"
+                    status_text = f"変換完了: {format_filesize(out_size)} 所要時間: {elapsed_str}"
+
+                if hasattr(self, 'hud_speed_eta_label'):
+                    self.root.after(0, lambda e_str=elapsed_str: self.hud_speed_eta_label.configure(
+                        text=f"[完了] 所要時間: {e_str}", fg=COLORS["success"]
+                    ))
 
                 self._update_status(status_text, color=COLORS["accent"], font_size=11, is_bold=True)
                 return True, False, None
 
             elif getattr(self, "is_cancelled", False):
                 self._update_progress(0)
-                self._update_status("❌ 変換が中止されました", color=COLORS["error"])
+                self._update_status("変換が中止されました", color=COLORS["error"])
+                if hasattr(self, 'hud_speed_eta_label'):
+                    self.root.after(0, lambda: self.hud_speed_eta_label.configure(
+                        text="[中止] 変換が中止されました", fg=COLORS["warning"]
+                    ))
                 if hasattr(self, "output_path") and os.path.exists(self.output_path):
                     try: os.remove(self.output_path)
                     except Exception: pass
@@ -3675,7 +3933,11 @@ class QuickCompressorApp:
                     self._update_status(msg, color=COLORS["warning"])
                     return False, True, fallback
 
-                self._update_status(f"❌ 変換失敗 (コード: {self.process.returncode})", color=COLORS["error"])
+                self._update_status(f"変換失敗 (コード: {self.process.returncode})", color=COLORS["error"])
+                if hasattr(self, 'hud_speed_eta_label'):
+                    self.root.after(0, lambda: self.hud_speed_eta_label.configure(
+                        text="[エラー] 変換失敗", fg=COLORS["error"]
+                    ))
                 if self.input_path in self._queue_data:
                     self._queue_data[self.input_path]["status"] = "error"
                 self.root.after(0, self._refresh_queue_display)
@@ -3683,17 +3945,26 @@ class QuickCompressorApp:
                 return False, False, None
 
         except Exception as e:
-            self._update_status(f"❌ エラー: {str(e)}", color=COLORS["error"])
+            self._update_status(f"エラー: {str(e)}", color=COLORS["error"])
+            if hasattr(self, 'hud_speed_eta_label'):
+                self.root.after(0, lambda: self.hud_speed_eta_label.configure(
+                    text="[エラー] 変換エラー発生", fg=COLORS["error"]
+                ))
             self._show_error(str(e))
             return False, False, None
 
-    def _update_throttled_ui(self, overall_progress, file_path, file_progress, status_str):
+    def _update_throttled_ui(self, overall_progress, file_path, file_progress, status_str, speed_str="-", eta_str="-"):
         """スロットリングされたUI更新（メインスレッド用）"""
         self.progress_var.set(overall_progress)
         self.taskbar_progress.set_state(TBPF_NORMAL)
         self.taskbar_progress.set_value(int(overall_progress * 10), 1000)
         self._update_queue_item_progress(file_path, file_progress)
         self.status_label.configure(text=status_str, fg=COLORS["text_dim"], font=(APP_FONT, 9))
+        if hasattr(self, 'hud_speed_eta_label') and self.hud_speed_eta_label.winfo_exists():
+            self.hud_speed_eta_label.configure(
+                text=f"進捗: {overall_progress:4.1f}%  |  速度: {speed_str}  |  残り: {eta_str}",
+                fg=COLORS["accent"]
+            )
 
     def _update_cumulative_stats(self, saved_bytes):
         """累計変換統計の更新"""
@@ -3729,12 +4000,12 @@ class QuickCompressorApp:
             if orig_total > 0 and out_total > 0:
                 ratio = out_total / orig_total * 100
                 status_text = (
-                    f"✅ {len(self.input_paths)} 個すべての変換完了！"
-                    f" {format_filesize(orig_total)} → {format_filesize(out_total)}"
-                    f" ({ratio:.1f}% / 元サイズ)  ⏱ {batch_elapsed_str}"
+                    f"{len(self.input_paths)} 個すべての変換完了: "
+                    f"{format_filesize(orig_total)} → {format_filesize(out_total)}"
+                    f" ({ratio:.1f}% / 元サイズ)  所要時間: {batch_elapsed_str}"
                 )
             else:
-                status_text = f"✅ {len(self.input_paths)} 個すべての変換が完了しました！  ⏱ {batch_elapsed_str}"
+                status_text = f"{len(self.input_paths)} 個すべての変換が完了しました。  所要時間: {batch_elapsed_str}"
             
             self._update_status(status_text, color=COLORS["accent"], font_size=11, is_bold=True)
             
@@ -3754,7 +4025,7 @@ class QuickCompressorApp:
         if self.is_converting and self.process:
             self.is_cancelled = True
             self.process.terminate()
-            self._update_status("❌ 変換が中止されました", color=COLORS["error"])
+            self._update_status("変換が中止されました", color=COLORS["error"])
             self.cancel_btn.pack_forget()
 
             for path, data in self._queue_data.items():
@@ -3785,7 +4056,7 @@ class QuickCompressorApp:
             if getattr(self, "auto_delete_var", None) and self.auto_delete_var.get():
                 self.delete_btn.configure(text="削除しました", state="disabled")
             else:
-                self.delete_btn.configure(text="🗑 元ファイルを削除", state="normal")
+                self.delete_btn.configure(text="元ファイルを削除", state="normal")
             self.delete_btn.pack(side="right", padx=(6, 0))
             self.open_btn.pack(side="right", padx=(6, 0))
             
@@ -3803,7 +4074,7 @@ class QuickCompressorApp:
             self.taskbar_progress.set_state(TBPF_ERROR)
             self.taskbar_progress.set_value(100, 100)
             
-            self.status_label.configure(text=f"❌ エラー: {message}", fg=COLORS["error"], font=(APP_FONT, 9))
+            self.status_label.configure(text=f"エラー: {message}", fg=COLORS["error"], font=(APP_FONT, 9))
             messagebox.showerror("エラー", message, parent=self.root)
             
         self.root.after(0, _update)
