@@ -717,32 +717,107 @@ class QuickCompressorApp:
         style.map("Horizontal.TScale", background=[("active", COLORS["accent_hover"])])
         style.configure("Custom.Horizontal.TProgressbar", troughcolor=COLORS["progress_trough"], background=COLORS["accent"], thickness=10)
 
-        # ComboboxのドロップダウンメニューをGUIの端から端まで全幅拡張するTclフック
+        # ドロップダウン展開時の半透明バックドロップオーバーレイ制御
+        self._dropdown_overlay = None
+
+        def _show_dropdown_backdrop():
+            if self._dropdown_overlay is not None:
+                return
+            try:
+                ov = tk.Toplevel(self.root)
+                ov.overrideredirect(True)
+                ov.configure(bg="#000000")
+                ov.attributes("-alpha", 0.65)  # 65%半透明の薄暗い黒
+                
+                # メインウィンドウの位置とサイズに合わせる
+                rx = self.root.winfo_rootx()
+                ry = self.root.winfo_rooty()
+                rw = self.root.winfo_width()
+                rh = self.root.winfo_height()
+                ov.geometry(f"{rw}x{rh}+{rx}+{ry}")
+                
+                # オーバーレイクリック時にも閉じる
+                ov.bind("<ButtonPress-1>", lambda e: _hide_dropdown_backdrop())
+                self._dropdown_overlay = ov
+                ov.lift(self.root)
+            except Exception:
+                self._dropdown_overlay = None
+
+        def _hide_dropdown_backdrop():
+            if self._dropdown_overlay is not None:
+                try:
+                    self._dropdown_overlay.destroy()
+                except Exception:
+                    pass
+                self._dropdown_overlay = None
+
+        self._show_dropdown_backdrop = _show_dropdown_backdrop
+        self._hide_dropdown_backdrop = _hide_dropdown_backdrop
+
         try:
+            self.root.createcommand("py_show_dropdown_backdrop", _show_dropdown_backdrop)
+            self.root.createcommand("py_hide_dropdown_backdrop", _hide_dropdown_backdrop)
+
+            # Comboboxのドロップダウン制御 (プリセット選択のみ全幅 ＆ 半透明適用、他は標準)
             self.root.tk.eval("""
 proc ttk::combobox::PlacePopdown {cb popdown} {
-    set toplevel [winfo toplevel $cb]
-    set root_x [winfo rootx $toplevel]
-    set root_w [winfo width $toplevel]
+    global preset_combo_path
     
-    set margin 18
-    set target_w [expr {$root_w - ($margin * 2)}]
-    if {$target_w < [winfo width $cb]} {
-        set target_w [winfo width $cb]
-        set target_x [winfo rootx $cb]
+    if {[info exists preset_combo_path] && $cb eq $preset_combo_path} {
+        set toplevel [winfo toplevel $cb]
+        set root_x [winfo rootx $toplevel]
+        set root_w [winfo width $toplevel]
+        
+        set margin 18
+        set target_w [expr {$root_w - ($margin * 2)}]
+        if {$target_w < [winfo width $cb]} {
+            set target_w [winfo width $cb]
+            set target_x [winfo rootx $cb]
+        } else {
+            set target_x [expr {$root_x + $margin}]
+        }
+        
+        set y [winfo rooty $cb]
+        set h [winfo height $cb]
+        set H [winfo reqheight $popdown]
+        if {$y + $h + $H > [winfo screenheight $popdown]} {
+            set Y [expr {$y - $H}]
+        } else {
+            set Y [expr {$y + $h}]
+        }
+        wm geometry $popdown ${target_w}x${H}+${target_x}+${Y}
+        
+        # ドロップダウンメニュー自体を半透明（アルファ 0.90）に設定
+        catch {wm attributes $popdown -alpha 0.90}
+        
+        # 背後メイン画面を半透明に暗転
+        py_show_dropdown_backdrop
+        after idle [list raise $popdown]
+        bind $popdown <Unmap> {+py_hide_dropdown_backdrop}
     } else {
-        set target_x [expr {$root_x + $margin}]
+        # その他のプルダウン（コーデック、解像度等）は通常の標準Tk挙動
+        catch {wm attributes $popdown -alpha 1.0}
+        
+        set x [winfo rootx $cb]
+        set y [winfo rooty $cb]
+        set w [winfo width $cb]
+        set h [winfo height $cb]
+        set style [$cb cget -style]
+        if { $style eq {} } {
+            set style TCombobox
+        }
+        set postoffset [ttk::style lookup $style -postoffset {} {0 0 0 0}]
+        foreach var {x y w h} delta $postoffset {
+            incr $var $delta
+        }
+        set H [winfo reqheight $popdown]
+        if {$y + $h + $H > [winfo screenheight $popdown]} {
+            set Y [expr {$y - $H}]
+        } else {
+            set Y [expr {$y + $h}]
+        }
+        wm geometry $popdown ${w}x${H}+${x}+${Y}
     }
-    
-    set y [winfo rooty $cb]
-    set h [winfo height $cb]
-    set H [winfo reqheight $popdown]
-    if {$y + $h + $H > [winfo screenheight $popdown]} {
-        set Y [expr {$y - $H}]
-    } else {
-        set Y [expr {$y + $h}]
-    }
-    wm geometry $popdown ${target_w}x${H}+${target_x}+${Y}
 }
 """)
         except Exception:
@@ -1205,6 +1280,10 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
         )
         self.preset_apply_combo.pack(fill="x", pady=(0, 10))
         self.preset_apply_combo.bind("<<ComboboxSelected>>", self._on_preset_apply_select)
+        try:
+            self.root.tk.eval(f"set preset_combo_path {str(self.preset_apply_combo)}")
+        except Exception:
+            pass
 
         # 2行目: ラジオボタン行 (容量優先 / 割合指定 / 品質優先)
         radio_row = tk.Frame(card, bg=COLORS["bg_card"])
