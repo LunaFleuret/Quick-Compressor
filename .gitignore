@@ -47,4 +47,7 @@ archive/
 
 # Gemini documentation / prompt files
 Gemini.md
-gemini.md
+gemini.md
+Gemini_Generated_Image_*.jpeg
+Gemini_Generated_Image_*.jpg
+Gemini_Generated_Image_*.png

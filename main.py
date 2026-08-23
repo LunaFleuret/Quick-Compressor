@@ -17,7 +17,13 @@ import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
+from PIL import Image, ImageDraw, ImageTk, ImageFont
+import customtkinter as ctk
 import register_menu
+
+# CustomTkinter テーマ設定 
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
 #ドラッグアンドドロップ用ライブラリ try:～except:でエラー回避
 try:
@@ -277,31 +283,33 @@ _bundled_ffprobe = get_resource_path(os.path.join("bin", "ffprobe.exe"))
 FFMPEG_PATH = _bundled_ffmpeg if os.path.exists(_bundled_ffmpeg) else "ffmpeg"
 FFPROBE_PATH = _bundled_ffprobe if os.path.exists(_bundled_ffprobe) else "ffprobe"
 
-# カラーパレット (Dark Slate & Electric Blue — 深みのあるダークチャコール・白文字・エレクトリックブルー)
+# カラーパレット (画像デザイン完全再現パレット)
+# 1. 基本情報/テキスト: 白 (#ffffff) / クリーンホワイト (#e2e8f0) / ライトスレート (#94a3b8)
+# 2. システムアクセント: スカイシアンブルー (#52b6ff)
+# 3. 状態/注意: 成功 (#10b981) / 警告 (#f59e0b) / 破壊・エラー (#ef4444)
 COLORS = {
-    "bg_dark":         "#13151b",  # ベース背景（真っ黒より一段明るいチャコール）
-    "bg_card":         "#1c1e27",  # カード・パネル背景（ダークスレート）
-    "bg_input":        "#242733",  # 入力・プルダウン背景
-    "bg_btn":          "#262a38",  # ボタン背景
-    "bg_btn_hover":    "#34394c",  # ボタンホバー
-    "accent":          "#3b82f6",  # エレクトリックブルー（メインアクセント）
-    "accent_hover":    "#2563eb",
-    "accent_press":    "#1d4ed8",
-    "accent_cyan":     "#60a5fa",  # 計器・数値用ライトブルー
-    "text":            "#ffffff",  # 文字（ピュアホワイト）
-    "text_dim":        "#94a3b8",  # 補足テキスト（ライトスレート）
+    "bg_dark":         "#151821",  # ベース背景（ディープスレートネイビー）
+    "bg_card":         "#212532",  # カード・パネル背景
+    "bg_input":        "#1a1d26",  # 入力・リストコンテナ背景
+    "bg_btn":          "#2c3242",  # サブボタン背景
+    "bg_btn_hover":    "#384054",  # サブボタンホバー
+    "accent":          "#52b6ff",  # システムアクセント（爽やかなスカイシアンブルー）
+    "accent_hover":    "#38a5f5",
+    "accent_press":    "#2093e6",
+    "text":            "#e2e8f0",  # 基本テキスト
+    "text_dim":        "#94a3b8",  # 補足・ディムテキスト
     "text_bright":     "#ffffff",  # 強調テキスト（ピュアホワイト）
-    "success":         "#10b981",  # エメラルド
+    "success":         "#10b981",  # 成功 / 完了
     "success_hover":   "#059669",
-    "warning":         "#f59e0b",
+    "warning":         "#f59e0b",  # 警告 / 注意喚起
     "warning_hover":   "#d97706",
-    "error":           "#ef4444",  # レッド
-    "border":          "#2c3040",  # 極薄境界線 (1px)
-    "border_light":    "#3d4359",  # コントロール枠線
-    "border_card":     "#2c3040",  # カード枠線
-    "slider_track":    "#242733",
-    "progress_trough": "#161820",
-    "selected_bg":     "#2d354b",
+    "error":           "#ef4444",  # 危険 / 破壊的操作 / エラー / 中止
+    "border":          "#2d3345",  # カード境界線
+    "border_light":    "#3e475e",  # コントロール枠線
+    "border_card":     "#2d3345",  # カード枠線
+    "slider_track":    "#1a1d26",  # スライダートラック
+    "progress_trough": "#1a1d26",  # プログレストラック
+    "selected_bg":     "#2d3446",  # リストアイテム選択中背景
 }
 
 # 高視認性UIフォント (Windows標準の滑らかな Yu Gothic UI)
@@ -363,6 +371,78 @@ def parse_version(v_str: str) -> tuple:
 def detect_gpu_and_default_codec() -> str:
     """初期選択のデフォルトコーデックを返す"""
     return "自動 (推奨: 環境に合わせて自動選択)"
+
+
+def set_dark_titlebar(window):
+    """Windows 10/11 のタイトルバーをダークモードに設定し、角丸を適用する"""
+    try:
+        import ctypes
+        window.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+        if not hwnd:
+            hwnd = window.winfo_id()
+        # DWMWA_USE_IMMERSIVE_DARK_MODE: 20 (Win11 / Win10 20H1+), 19 (Win10 older)
+        value = ctypes.c_int(1)
+        res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd, 20, ctypes.byref(value), ctypes.sizeof(value)
+        )
+        if res != 0:
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 19, ctypes.byref(value), ctypes.sizeof(value)
+            )
+        # DWMWA_WINDOW_CORNER_PREFERENCE: 33 (2 = DWMWCP_ROUND)
+        corner_val = ctypes.c_int(2)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd, 33, ctypes.byref(corner_val), ctypes.sizeof(corner_val)
+        )
+    except Exception:
+        pass
+
+
+_icon_cache = {}
+
+def get_file_icon_image(size=28, is_selected=False):
+    """モックアップ画像に準拠した紫グラデーションの動画ファイルアイコン画像を生成"""
+    key = (size, is_selected)
+    if key in _icon_cache:
+        return _icon_cache[key]
+    
+    scale = 4
+    s = size * scale
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    
+    # 角丸ドキュメント四角形 (紫ベース)
+    pad = int(2 * scale)
+    r = int(4 * scale)
+    bg_c = "#7c3aed" if not is_selected else "#8b5cf6"
+    draw.rounded_rectangle((pad, pad, s - pad - 1, s - pad - 1), radius=r, fill=bg_c)
+    
+    # フィルム風の小さな白い四角（上下）
+    hole_w = int(2.5 * scale)
+    hole_h = int(2.5 * scale)
+    y_top = pad + int(2 * scale)
+    y_bot = s - pad - hole_h - int(2 * scale)
+    for x_i in range(pad + int(3 * scale), s - pad - int(3 * scale), int(6 * scale)):
+        draw.rectangle((x_i, y_top, x_i + hole_w, y_top + hole_h), fill="#ffffff")
+        draw.rectangle((x_i, y_bot, x_i + hole_w, y_bot + hole_h), fill="#ffffff")
+    
+    # 中央に白い再生三角 ▶
+    cx, cy = s // 2, s // 2
+    tr_s = int(4 * scale)
+    points = [
+        (cx - int(tr_s * 0.8), cy - tr_s),
+        (cx - int(tr_s * 0.8), cy + tr_s),
+        (cx + int(tr_s * 1.2), cy),
+    ]
+    draw.polygon(points, fill="#ffffff")
+    
+    smooth_img = img.resize((size, size), Image.Resampling.LANCZOS)
+    tk_img = ImageTk.PhotoImage(smooth_img)
+    _icon_cache[key] = tk_img
+    return tk_img
+
+
 
 
 def send_to_recycle_bin(filepath):
@@ -563,6 +643,309 @@ class StudioCard(tk.LabelFrame):
         self.inner = self
 
 
+class CircularProgressMeter(tk.Label):
+    """Pillow 4xスーパーサンプリングによる完全アンチエイリアス円形ドーナツメーター"""
+    def __init__(self, parent, size=48, line_width=4, track_color=None, fill_color=None, bg=None, **kwargs):
+        self.size = size
+        self.line_width = line_width
+        self.track_color = track_color or COLORS["bg_input"]
+        self.fill_color = fill_color or COLORS["accent"]
+        self.parent_bg = bg or COLORS["bg_card"]
+        self.current_value = 0.0
+
+        super().__init__(parent, bg=self.parent_bg, bd=0, highlightthickness=0, **kwargs)
+        self._render(0.0)
+
+    def _render(self, value):
+        scale = 4
+        sw, sh = self.size * scale, self.size * scale
+        lw = self.line_width * scale
+        margin = lw // 2 + int(2 * scale)
+        x0, y0 = margin, margin
+        x1, y1 = sw - margin, sh - margin
+
+        img = Image.new("RGBA", (sw, sh), self.parent_bg)
+        draw = ImageDraw.Draw(img)
+
+        # 1. 背景トラック円
+        draw.ellipse((x0, y0, x1, y1), outline=self.track_color, width=lw)
+
+        # 2. 進捗円弧 (上部 270度から時計回り)
+        if value > 0:
+            start_deg = 270
+            end_deg = start_deg + int((value / 100.0) * 360)
+            draw.arc((x0, y0, x1, y1), start=start_deg, end=end_deg, fill=self.fill_color, width=lw)
+
+        # 3. 中央パーセントテキスト
+        text = f"{value:.1f}%" if value < 99.9 else f"{int(value)}%"
+        font_size = int(8.5 * scale)
+        font_candidates = [
+            "C:/Windows/Fonts/YuGothB.ttc",
+            "C:/Windows/Fonts/meiryo.ttc",
+            "C:/Windows/Fonts/arialbd.ttf",
+            "C:/Windows/Fonts/arial.ttf"
+        ]
+        pil_font = None
+        for fpath in font_candidates:
+            try:
+                pil_font = ImageFont.truetype(fpath, font_size)
+                break
+            except Exception:
+                continue
+        if pil_font is None:
+            pil_font = ImageFont.load_default()
+
+        bbox = draw.textbbox((0, 0), text, font=pil_font)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+        tx = (sw - tw) // 2 - bbox[0]
+        ty = (sh - th) // 2 - bbox[1]
+        draw.text((tx, ty), text, font=pil_font, fill=COLORS["text_bright"])
+
+        smooth_img = img.resize((self.size, self.size), Image.Resampling.LANCZOS)
+        tk_img = ImageTk.PhotoImage(smooth_img)
+        self.configure(image=tk_img)
+        self.image = tk_img
+
+    def set_value(self, value):
+        self.current_value = max(0.0, min(100.0, float(value)))
+        self._render(self.current_value)
+
+
+class PillButton(tk.Label):
+    """Pillowの4xスーパーサンプリングによる完全アンチエイリアス角丸ピルボタン"""
+    _img_cache = {}
+
+    def __init__(self, parent, text="", command=None, width=50, height=22, radius=11,
+                 bg_color=None, fg_color=None,
+                 active_bg=None, active_fg=None,
+                 parent_bg=None, font=None, **kwargs):
+        self.btn_text = text
+        self.command = command
+        self.w = width
+        self.h = height
+        self.radius = radius
+        self.bg_color = bg_color or COLORS["bg_btn"]
+        self.fg_color = fg_color or COLORS["text"]
+        self.active_bg = active_bg or COLORS["accent"]
+        self.active_fg = active_fg or "#000000"
+        self.hover_bg = COLORS["bg_btn_hover"]
+        self.parent_bg = parent_bg or COLORS["bg_card"]
+        self.btn_font = font or (APP_FONT, 8, "bold")
+        self.is_selected = False
+        self.is_hovered = False
+
+        super().__init__(parent, bg=self.parent_bg, bd=0, highlightthickness=0, cursor="hand2", **kwargs)
+
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Button-1>", self._on_click)
+
+        self._render()
+
+    def _get_image(self, fill_hex, text_color_hex):
+        scale = 4  # 4倍解像度でアンチエイリアス生成
+        key = (self.btn_text, self.w, self.h, self.radius, fill_hex, text_color_hex, self.parent_bg, self.btn_font)
+        if key in self._img_cache:
+            return self._img_cache[key]
+
+        sw, sh = self.w * scale, self.h * scale
+        sr = self.radius * scale
+
+        img = Image.new("RGBA", (sw, sh), self.parent_bg)
+        draw = ImageDraw.Draw(img)
+
+        # 角丸四角形を高解像度描画
+        draw.rounded_rectangle((0, 0, sw - 1, sh - 1), radius=sr, fill=fill_hex)
+
+        # フォント取得
+        font_size = int(self.btn_font[1] * scale)
+        font_candidates = [
+            "C:/Windows/Fonts/YuGothB.ttc",
+            "C:/Windows/Fonts/YuGothM.ttc",
+            "C:/Windows/Fonts/meiryo.ttc",
+            "C:/Windows/Fonts/msgothic.ttc",
+            "C:/Windows/Fonts/arialbd.ttf",
+            "C:/Windows/Fonts/arial.ttf"
+        ]
+        pil_font = None
+        for fpath in font_candidates:
+            try:
+                pil_font = ImageFont.truetype(fpath, font_size)
+                break
+            except Exception:
+                continue
+        if pil_font is None:
+            pil_font = ImageFont.load_default()
+
+        # テキストの中央配置計算
+        bbox = draw.textbbox((0, 0), self.btn_text, font=pil_font)
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
+        tx = (sw - tw) // 2 - bbox[0]
+        ty = (sh - th) // 2 - bbox[1]
+        draw.text((tx, ty), self.btn_text, font=pil_font, fill=text_color_hex)
+
+        # LANCZOS高品質リサンプリングで滑らかに縮小
+        smooth_img = img.resize((self.w, self.h), Image.Resampling.LANCZOS)
+        tk_img = ImageTk.PhotoImage(smooth_img)
+        self._img_cache[key] = tk_img
+        return tk_img
+
+    def _render(self):
+        if self.is_selected:
+            fill = self.active_bg
+            txt_color = self.active_fg
+        elif self.is_hovered:
+            fill = self.hover_bg
+            txt_color = COLORS["text_bright"]
+        else:
+            fill = self.bg_color
+            txt_color = self.fg_color
+
+        img = self._get_image(fill, txt_color)
+        self.configure(image=img)
+        self.image = img
+
+    def set_selected(self, selected: bool):
+        self.is_selected = selected
+        self._render()
+
+    def _on_enter(self, e):
+        self.is_hovered = True
+        self._render()
+
+    def _on_leave(self, e):
+        self.is_hovered = False
+        self._render()
+
+    def _on_click(self, e):
+        if self.command:
+            self.command()
+
+
+class TopmostToggle(tk.Label):
+    """Pillowの4xスーパーサンプリングによる完全アンチエイリアス最前面ピントグルスイッチ"""
+    _img_cache = {}
+
+    def __init__(self, parent, is_on=False, command=None, width=142, height=26, radius=13,
+                 bg_color=None, border_color=None, accent_color=None,
+                 parent_bg=None, font=None, **kwargs):
+        self.is_on = is_on
+        self.command = command
+        self.w = width
+        self.h = height
+        self.radius = radius
+        self.bg_color = bg_color or COLORS["bg_card"]
+        self.border_color = border_color or COLORS["border_light"]
+        self.accent_color = accent_color or COLORS["accent"]
+        self.parent_bg = parent_bg or COLORS["bg_dark"]
+        self.btn_font = font or (APP_FONT, 9)
+        self.is_hovered = False
+
+        super().__init__(parent, bg=self.parent_bg, bd=0, highlightthickness=0, cursor="hand2", **kwargs)
+
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Button-1>", self._on_click)
+
+        self._render()
+
+    def _get_image(self, is_on, is_hovered):
+        scale = 4  # 4倍解像度でアンチエイリアス生成
+        key = (is_on, is_hovered, self.w, self.h, self.radius, self.bg_color, self.border_color, self.accent_color, self.parent_bg, self.btn_font)
+        if key in self._img_cache:
+            return self._img_cache[key]
+
+        sw, sh = self.w * scale, self.h * scale
+        sr = self.radius * scale
+
+        img = Image.new("RGBA", (sw, sh), self.parent_bg)
+        draw = ImageDraw.Draw(img)
+
+        bg = COLORS["bg_btn_hover"] if is_hovered else self.bg_color
+        border = self.accent_color if is_on else self.border_color
+        line_w = int(1.2 * scale)
+
+        # 1. 外枠バッジ (角丸長方形)
+        draw.rounded_rectangle((0, 0, sw - 1, sh - 1), radius=sr, fill=bg, outline=border, width=line_w)
+
+        # 2. ピンアイコン ＆ テキスト
+        font_size = int(self.btn_font[1] * scale)
+        font_candidates = [
+            "C:/Windows/Fonts/YuGothB.ttc" if is_on else "C:/Windows/Fonts/YuGothM.ttc",
+            "C:/Windows/Fonts/meiryo.ttc",
+            "C:/Windows/Fonts/msgothic.ttc",
+            "C:/Windows/Fonts/arial.ttf"
+        ]
+        pil_font = None
+        for fpath in font_candidates:
+            try:
+                pil_font = ImageFont.truetype(fpath, font_size)
+                break
+            except Exception:
+                continue
+        if pil_font is None:
+            pil_font = ImageFont.load_default()
+
+        pin_icon = "📌 "
+        txt = "固定中 (最前面)" if is_on else "最前面固定"
+        txt_color = COLORS["text_bright"] if is_on else COLORS["text_dim"]
+        full_text = f"{pin_icon}{txt}"
+
+        bbox = draw.textbbox((0, 0), full_text, font=pil_font)
+        th = bbox[3] - bbox[1]
+        ty = (sh - th) // 2 - bbox[1]
+        tx = int(10 * scale)
+        draw.text((tx, ty), full_text, font=pil_font, fill=txt_color)
+
+        # 3. 右側スライドトグルスイッチ (幅 24px, 高さ 14px)
+        sw_w = int(24 * scale)
+        sw_h = int(14 * scale)
+        sw_x = sw - sw_w - int(8 * scale)
+        sw_y = (sh - sw_h) // 2
+        sw_r = sw_h // 2
+
+        track_fill = self.accent_color if is_on else "#384054"
+        draw.rounded_rectangle((sw_x, sw_y, sw_x + sw_w, sw_y + sw_h), radius=sw_r, fill=track_fill)
+
+        # トグルスイッチノブ (白丸)
+        knob_d = sw_h - int(4 * scale)
+        knob_y = sw_y + int(2 * scale)
+        if is_on:
+            knob_x = sw_x + sw_w - knob_d - int(2 * scale)
+        else:
+            knob_x = sw_x + int(2 * scale)
+        draw.ellipse((knob_x, knob_y, knob_x + knob_d, knob_y + knob_d), fill="#ffffff")
+
+        # LANCZOS高品質リサンプリングで滑らかに縮小
+        smooth_img = img.resize((self.w, self.h), Image.Resampling.LANCZOS)
+        tk_img = ImageTk.PhotoImage(smooth_img)
+        self._img_cache[key] = tk_img
+        return tk_img
+
+    def _render(self):
+        img = self._get_image(self.is_on, self.is_hovered)
+        self.configure(image=img)
+        self.image = img
+
+    def set_state(self, is_on: bool):
+        self.is_on = is_on
+        self._render()
+
+    def _on_enter(self, e):
+        self.is_hovered = True
+        self._render()
+
+    def _on_leave(self, e):
+        self.is_hovered = False
+        self._render()
+
+    def _on_click(self, e):
+        if self.command:
+            self.command()
+
+
 # ─────────────────────────────────────────────
 # メインアプリケーションクラス
 # ─────────────────────────────────────────────
@@ -609,6 +992,7 @@ class QuickCompressorApp:
         self.root.title(f"Quick Compressor v{CURRENT_VERSION}")
         self.root.configure(bg=COLORS["bg_dark"])
         self.root.resizable(False, False)
+        set_dark_titlebar(self.root)
 
 
         # 動画情報を取得
@@ -683,10 +1067,10 @@ class QuickCompressorApp:
             pass
 
         # UI用ttkスタイルの設定（ドロップダウン立体浮き出し ＆ 20%スケール）
-        self.root.option_add("*TCombobox*Listbox.background", "#252937")
+        self.root.option_add("*TCombobox*Listbox.background", "#212532")
         self.root.option_add("*TCombobox*Listbox.foreground", COLORS["text_bright"])
         self.root.option_add("*TCombobox*Listbox.selectBackground", COLORS["accent"])
-        self.root.option_add("*TCombobox*Listbox.selectForeground", COLORS["text_bright"])
+        self.root.option_add("*TCombobox*Listbox.selectForeground", "#000000")
         self.root.option_add("*TCombobox*Listbox.font", (APP_FONT, 12))
         self.root.option_add("*TCombobox*Listbox.relief", "solid")
         self.root.option_add("*TCombobox*Listbox.borderWidth", 1)
@@ -698,7 +1082,7 @@ class QuickCompressorApp:
         style.theme_use("default")
         style.configure(".", background=COLORS["bg_dark"], foreground=COLORS["text"], 
                         fieldbackground=COLORS["bg_input"], selectbackground=COLORS["accent"], 
-                        selectforeground=COLORS["bg_dark"], bordercolor=COLORS["border"], 
+                        selectforeground="#000000", bordercolor=COLORS["border"], 
                         darkcolor=COLORS["border"], lightcolor=COLORS["border"])
         style.configure("TCombobox", background=COLORS["bg_card"], foreground=COLORS["text"],
                         fieldbackground=COLORS["bg_input"], bordercolor=COLORS["border_light"],
@@ -708,10 +1092,10 @@ class QuickCompressorApp:
                   selectbackground=[("readonly", COLORS["bg_input"])],
                   selectforeground=[("readonly", COLORS["text"])],
                   bordercolor=[("focus", COLORS["accent"]), ("hover", COLORS["border_light"])])
-        style.configure("Vertical.TScrollbar", background="#262a38", troughcolor=COLORS["bg_card"],
+        style.configure("Vertical.TScrollbar", background="#262c3a", troughcolor=COLORS["bg_card"],
                         bordercolor=COLORS["bg_card"], arrowcolor=COLORS["text_dim"])
         style.map("Vertical.TScrollbar",
-                  background=[("active", "#34394c"), ("pressed", "#3d4359")],
+                  background=[("active", "#363e52"), ("pressed", "#424b63")],
                   arrowcolor=[("active", COLORS["text_bright"])])
         style.configure("Horizontal.TScale", background=COLORS["accent"], troughcolor=COLORS["slider_track"])
         style.map("Horizontal.TScale", background=[("active", COLORS["accent_hover"])])
@@ -758,23 +1142,33 @@ class QuickCompressorApp:
             self.root.createcommand("py_show_dropdown_backdrop", _show_dropdown_backdrop)
             self.root.createcommand("py_hide_dropdown_backdrop", _hide_dropdown_backdrop)
 
-            # Comboboxのドロップダウン制御 (プリセット選択のみ全幅 ＆ 半透明適用、他は標準)
+            # Comboboxのドロップダウン制御 (プリセット選択および出力コーデックに全幅 ＆ 半透明適用、他は標準)
             self.root.tk.eval("""
+set custom_wide_combos [list]
 proc ttk::combobox::PlacePopdown {cb popdown} {
-    global preset_combo_path
+    global custom_wide_combos
     
-    if {[info exists preset_combo_path] && $cb eq $preset_combo_path} {
+    set is_wide 0
+    if {[info exists custom_wide_combos] && [lsearch -exact $custom_wide_combos $cb] >= 0} {
+        set is_wide 1
+    }
+    
+    if {$is_wide} {
         set toplevel [winfo toplevel $cb]
         set root_x [winfo rootx $toplevel]
         set root_w [winfo width $toplevel]
         
+        # 右半分エリア（ウィンドウ中央から右端マージンまで）
         set margin 18
-        set target_w [expr {$root_w - ($margin * 2)}]
-        if {$target_w < [winfo width $cb]} {
+        set half_x [expr {$root_x + ($root_w / 2) + 4}]
+        set half_w [expr {($root_w / 2) - $margin - 4}]
+        
+        if {$half_w < [winfo width $cb]} {
             set target_w [winfo width $cb]
             set target_x [winfo rootx $cb]
         } else {
-            set target_x [expr {$root_x + $margin}]
+            set target_x $half_x
+            set target_w $half_w
         }
         
         set y [winfo rooty $cb]
@@ -795,7 +1189,7 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
         after idle [list raise $popdown]
         bind $popdown <Unmap> {+py_hide_dropdown_backdrop}
     } else {
-        # その他のプルダウン（コーデック、解像度等）は通常の標準Tk挙動
+        # その他のプルダウンは通常の標準Tk挙動
         catch {wm attributes $popdown -alpha 1.0}
         
         set x [winfo rootx $cb]
@@ -840,23 +1234,6 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
             self._switch_to_hud()
         else:
             self._switch_to_full_gui()
-            self.root.update_idletasks()
-            w = self.root.winfo_reqwidth()
-            h = self.root.winfo_reqheight()
-            screen_w = self.root.winfo_screenwidth()
-            screen_h = self.root.winfo_screenheight()
-            x = max(0, (screen_w - w) // 2)
-            y = max(0, (screen_h - h) // 2)
-
-            self.root.minsize(w, h)
-            self.root.maxsize(w, 9999)
-            self.root.geometry(f"{w}x{h}+{x}+{y}")
-            
-            if hasattr(self, 'resolution_warning_label'):
-                self.resolution_warning_label.configure(wraplength=self.main_frame.winfo_reqwidth() - 60)
-
-            # 変換キューパネルの初期表示状態（2個以上のファイルがある時のみ表示）
-            self._update_queue_panel_visibility()
 
         # ウィンドウのどこでもドラッグ移動できるように設定
         self._enable_window_drag()
@@ -880,7 +1257,7 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
         self.root.bind("<ButtonPress-1>", start_drag)
         self.root.bind("<B1-Motion>", dragging)
 
-        if HAS_DND:
+        if HAS_DND and hasattr(self.root, 'drop_target_register'):
             self.root.drop_target_register(DND_FILES)
             self.root.dnd_bind('<<Drop>>', self._on_drop)
             self.root.dnd_bind('<<DropEnter>>', self._on_drop_enter)
@@ -913,83 +1290,88 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
         card.pack(fill="x", pady=(0, 6))
         return card
 
-    def _create_btn(self, parent, text, command, fg=None, bg=None, padx=12, pady=5, font_size=10, is_bold=False):
-        """Studio Pro スタイルに合わせた統一ボタン（20%拡大）"""
+    def _create_btn(self, parent, text, command, fg=None, bg=None, padx=12, pady=5, font_size=10, is_bold=False, width=None, height=28):
+        """CustomTkinter スタイルの統一ボタン"""
         fg_c = fg or COLORS["text"]
         bg_c = bg or COLORS["bg_btn"]
         weight = "bold" if is_bold else "normal"
-        btn = tk.Button(
+        btn = ctk.CTkButton(
             parent, text=text, command=command,
-            font=(APP_FONT, font_size, weight),
-            fg=fg_c, bg=bg_c,
-            activebackground=COLORS["bg_btn_hover"], activeforeground=COLORS["text_bright"],
-            relief="flat", cursor="hand2",
-            padx=padx, pady=pady,
-            highlightbackground=COLORS["border_light"], highlightthickness=1, bd=0
+            font=ctk.CTkFont(family=APP_FONT, size=font_size, weight=weight),
+            text_color=fg_c, fg_color=bg_c, hover_color=COLORS["bg_btn_hover"],
+            corner_radius=8, width=width or 70, height=height
         )
         return btn
 
     def _build_ui(self):
-        # 進捗管理変数を先に初期化（HUDと通常GUI両方で参照）
+        # 状態変数を先に初期化（HUDと通常GUI両方で参照）
         self.progress_var = tk.DoubleVar(value=0)
+        self.is_topmost = False
 
-        # 外側の水平コンテナ（左：メイン画面 ｜ 縦セパレーター ｜ 右：バッチキュー）
-        self.outer_frame = tk.Frame(self.root, bg=COLORS["bg_dark"])
+        # 外側の水平コンテナ
+        self.outer_frame = ctk.CTkFrame(self.root, fg_color=COLORS["bg_dark"])
         self.outer_frame.pack(fill="both", expand=True)
 
         # --- HUDモード用フレーム（右クリック起動時専用ミニ画面） ---
-        self.hud_frame = tk.Frame(self.outer_frame, bg=COLORS["bg_dark"], padx=18, pady=16)
+        self.hud_frame = ctk.CTkFrame(self.outer_frame, fg_color=COLORS["bg_dark"])
         self._build_hud_section(self.hud_frame)
 
-        # メインコンテナ（左側通常GUI）
-        self.main_frame = tk.Frame(self.outer_frame, bg=COLORS["bg_dark"], padx=18, pady=16)
+        # メインコンテナ（通常GUI 2カラムダッシュボード）
+        self.main_frame = ctk.CTkFrame(self.outer_frame, fg_color=COLORS["bg_dark"])
         main_frame = self.main_frame
 
-        # 縦セパレーター
-        self.queue_separator = tk.Frame(self.outer_frame, bg=COLORS["border"], width=1)
-
-        # 右側：バッチキューパネル
-        self._build_queue_panel(self.outer_frame)
-
         # --- プリセット作成モード バナー (初期は非表示) ---
-        self.preset_banner = tk.Frame(main_frame, bg=COLORS["success"], pady=6)
-        self.preset_banner_label = tk.Label(
+        self.preset_banner = ctk.CTkFrame(main_frame, fg_color=COLORS["success"], corner_radius=6)
+        self.preset_banner_label = ctk.CTkLabel(
             self.preset_banner, text="プリセット作成モード：現在の設定をプリセットとして保存できます",
-            font=(APP_FONT, 11, "bold"), fg=COLORS["bg_dark"], bg=COLORS["success"]
+            font=ctk.CTkFont(family=APP_FONT, size=11, weight="bold"), text_color="#000000"
         )
-        self.preset_banner_label.pack()
+        self.preset_banner_label.pack(pady=4)
 
-        # --- タイトル & ヘッダーバー ---
-        self.title_frame = tk.Frame(main_frame, bg=COLORS["bg_dark"])
+        # --- 1. タイトル & ヘッダーバー ---
+        self.title_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         self.title_frame.pack(fill="x", pady=(0, 8))
 
-        tk.Label(
-            self.title_frame, text="Quick Compressor",
-            font=(APP_FONT, 13, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
+        title_left = ctk.CTkFrame(self.title_frame, fg_color="transparent")
+        title_left.pack(side="left")
+
+        ctk.CTkLabel(
+            title_left, text="Quick Compressor",
+            font=ctk.CTkFont(family=APP_FONT, size=20, weight="bold"), text_color=COLORS["accent"]
         ).pack(side="left")
 
-        # 最前面固定ボタン (右上に配置)
-        self.is_topmost = False
-        self.pin_btn = self._create_btn(
-            self.title_frame, "最前面固定", self._toggle_topmost,
-            fg=COLORS["text_dim"], padx=10, pady=3, font_size=10
+        ctk.CTkLabel(
+            title_left, text=f" v{CURRENT_VERSION}",
+            font=ctk.CTkFont(family=APP_FONT, size=12), text_color=COLORS["text_dim"]
+        ).pack(side="left", padx=(6, 0), pady=(4, 0))
+
+        # 最前面固定トグルスイッチ (モックアップ完全準拠の角丸ピル型バッジ)
+        self.pin_btn = TopmostToggle(
+            self.title_frame, is_on=self.is_topmost, command=self._toggle_topmost,
+            width=150, height=28, radius=14
         )
         self.pin_btn.pack(side="right")
-        self._toggle_topmost()
 
-        # 1. 対象フォルダ / ファイル (ドラッグ&ドロップ対応)
-        self._build_file_section(main_frame)
+        # --- 2. 上段 左右2カラムコンテナ ---
+        top_cols = ctk.CTkFrame(main_frame, fg_color="transparent")
+        top_cols.pack(fill="both", expand=True, pady=(0, 8))
 
-        # 2. 変換モード / プリセット
-        self._build_mode_section(main_frame)
+        # 左カラム: 対象動画リスト (幅 340px)
+        left_col = ctk.CTkFrame(top_cols, fg_color="transparent", width=340)
+        left_col.pack(side="left", fill="both", expand=True, padx=(0, 6))
+        left_col.pack_propagate(False)
+        self._build_file_section(left_col)
 
-        # 3. 詳細設定
-        self._build_settings_section(main_frame)
+        # 右カラム: プリセット選択 ＆ 詳細設定 (幅約 420px)
+        right_col = ctk.CTkFrame(top_cols, fg_color="transparent")
+        right_col.pack(side="right", fill="both", expand=True, padx=(6, 0))
+        self._build_mode_section(right_col)
+        self._build_settings_section(right_col)
 
-        # 4. 進行状況
+        # --- 3. 中段: 進行状況 & GPU円形計器 ---
         self._build_progress_section(main_frame)
 
-        # 5. ボトムアクションバー
+        # --- 4. 最下部: ボトムアクションバー ---
         self._build_bottom_bar(main_frame)
 
         # UI変数のリアルタイム同期トレースの登録
@@ -1013,9 +1395,9 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
             font=(APP_FONT, 12, "bold"), fg=COLORS["accent"], bg=COLORS["bg_dark"]
         ).pack(side="left")
 
-        self.hud_pin_btn = self._create_btn(
-            h_row, "最前面固定", self._toggle_topmost,
-            fg=COLORS["text_dim"], padx=10, pady=3, font_size=10
+        self.hud_pin_btn = TopmostToggle(
+            h_row, is_on=self.is_topmost, command=self._toggle_topmost,
+            width=140, height=26, radius=13
         )
         self.hud_pin_btn.pack(side="right")
 
@@ -1050,10 +1432,10 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
         )
         self.hud_speed_eta_label.pack(fill="x", pady=(0, 5))
 
-        # 4行目: GPU使用率 (3D & Encode - 計器シアン)
+        # 4行目: GPU使用率 (3D & Encode)
         self.hud_gpu_label = tk.Label(
             card, text="3D:  0.0%  |  Encode:  0.0%",
-            font=(APP_FONT, 10, "bold"), fg=COLORS["accent_cyan"], bg=COLORS["bg_card"],
+            font=(APP_FONT, 10, "bold"), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
             anchor="w"
         )
         self.hud_gpu_label.pack(fill="x", pady=(0, 5))
@@ -1091,34 +1473,29 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
         if hasattr(self, 'hud_frame'):
             self.hud_frame.pack_forget()
         if hasattr(self, 'main_frame'):
-            self.main_frame.pack(side="left", fill="both", expand=False)
-        self._update_queue_panel_visibility()
+            self.main_frame.pack(side="left", fill="both", expand=True, padx=18, pady=16)
 
         self.root.update_idletasks()
-        req_w = self.root.winfo_reqwidth()
-        req_h = self.root.winfo_reqheight()
+        w = 900
+        h = 600
 
         # 画面中央に配置
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
-        x = max(0, (screen_w - req_w) // 2)
-        y = max(0, (screen_h - req_h) // 2)
+        x = max(0, (screen_w - w) // 2)
+        y = max(0, (screen_h - h) // 2)
 
-        self.root.minsize(req_w, req_h)
-        self.root.maxsize(req_w, 9999)
-        self.root.geometry(f"{req_w}x{req_h}+{x}+{y}")
+        self.root.minsize(w, h)
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
+        self._refresh_file_list_display()
 
     def _switch_to_hud(self):
         """通常GUI画面からHUDミニ画面へ切り替える"""
         self._is_hud_mode = True
-        if hasattr(self, 'queue_panel'):
-            self.queue_panel.pack_forget()
-        if hasattr(self, 'queue_separator'):
-            self.queue_separator.pack_forget()
         if hasattr(self, 'main_frame'):
             self.main_frame.pack_forget()
         if hasattr(self, 'hud_frame'):
-            self.hud_frame.pack(side="left", fill="both", expand=True)
+            self.hud_frame.pack(side="left", fill="both", expand=True, padx=18, pady=16)
         
         self.root.update_idletasks()
         w = 540
@@ -1131,426 +1508,552 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
         y = max(0, (screen_h - h) // 2)
 
         self.root.minsize(w, h)
-        self.root.maxsize(w, 9999)
         self.root.geometry(f"{w}x{h}+{x}+{y}")
         self._update_hud_display()
 
+    def _update_hud_display(self):
+        """HUDミニ画面の情報表示を更新"""
+        if not getattr(self, '_is_hud_mode', False) or not hasattr(self, 'hud_file_label'):
+            return
+        if self.input_path and hasattr(self, 'video_info'):
+            fname = Path(self.input_path).name
+            sz = format_filesize(self.video_info.get("filesize", 0))
+            self.hud_file_label.configure(text=f"対象: {fname} ({sz})")
+        else:
+            self.hud_file_label.configure(text="対象: ファイル未選択")
+
     def _build_file_section(self, parent):
-        """グループ 1: 対象ファイル / 入力エリア"""
-        card = self._create_group_box(parent, "対象動画")
+        """左カラム: 対象動画リストパネル"""
+        card = ctk.CTkFrame(
+            parent, fg_color=COLORS["bg_card"], corner_radius=12,
+            border_width=1, border_color=COLORS["border"]
+        )
+        card.pack(fill="both", expand=True)
         self.file_card = card
 
-        path_row = tk.Frame(card, bg=COLORS["bg_card"])
-        path_row.pack(fill="x")
+        # ヘッダー行: 「対象動画:」 ｜ [🔍 ファイル選択] [🗑 クリア]
+        h_row = ctk.CTkFrame(card, fg_color="transparent")
+        h_row.pack(fill="x", padx=12, pady=(10, 6))
+
+        ctk.CTkLabel(
+            h_row, text="対象動画:",
+            font=ctk.CTkFont(family=APP_FONT, size=14, weight="bold"), text_color=COLORS["text_bright"]
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            h_row, text="🗑 クリア", command=self._clear_input,
+            fg_color=COLORS["bg_btn"], hover_color="#ef4444", corner_radius=6,
+            font=ctk.CTkFont(family=APP_FONT, size=11, weight="bold"), width=66, height=28
+        ).pack(side="right")
+
+        ctk.CTkButton(
+            h_row, text="🔍 ファイル選択", command=self._select_file,
+            fg_color=COLORS["bg_btn"], hover_color=COLORS["bg_btn_hover"], corner_radius=6,
+            font=ctk.CTkFont(family=APP_FONT, size=11, weight="bold"), width=100, height=28
+        ).pack(side="right", padx=(0, 6))
+
+        # スクロール可能ファイルリストコンテナ
+        self.file_list_scroll = ctk.CTkScrollableFrame(card, fg_color=COLORS["bg_input"], corner_radius=8)
+        self.file_list_scroll.pack(fill="both", expand=True, padx=10, pady=(0, 6))
+
+        # フッター行: 対象動画件数
+        self.file_count_label = ctk.CTkLabel(
+            card, text="対象動画: 0 件",
+            font=ctk.CTkFont(family=APP_FONT, size=12), text_color=COLORS["text_dim"]
+        )
+        self.file_count_label.pack(anchor="w", padx=12, pady=(0, 8))
 
         self.file_path_var = tk.StringVar(value="")
-        self.file_entry = tk.Entry(
-            path_row, textvariable=self.file_path_var,
-            font=(APP_FONT, 10), bg=COLORS["bg_input"], fg=COLORS["text"],
-            relief="flat", highlightbackground=COLORS["border_light"], highlightthickness=1,
-            insertbackground=COLORS["text"]
-        )
-        self.file_entry.pack(side="left", fill="x", expand=True, ipady=4, padx=(0, 8))
+        self._refresh_file_list_display()
 
-        self._create_btn(path_row, "ファイル選択", self._select_file, padx=10, pady=4, font_size=10).pack(side="left", padx=(0, 6))
-        self._create_btn(path_row, "クリア", self._clear_input, padx=10, pady=4, font_size=10).pack(side="left")
+    def _refresh_file_list_display(self):
+        """左カラムのファイル一覧を描画更新"""
+        if not hasattr(self, 'file_list_scroll'):
+            return
 
-        # 下部：動画詳細情報バッジ
-        self.file_info_row = tk.Frame(card, bg=COLORS["bg_card"])
-        self.file_info_row.pack(fill="x", pady=(8, 0))
+        for w in self.file_list_scroll.winfo_children():
+            w.destroy()
 
-        self.file_count_label = tk.Label(
-            self.file_info_row, text="対象動画: 0 件",
-            font=(APP_FONT, 10, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"]
-        )
-        self.file_count_label.pack(side="left")
+        paths = getattr(self, 'input_paths', [])
+        count = len(paths)
+        if hasattr(self, 'file_count_label'):
+            self.file_count_label.configure(text=f"対象動画: {count} 件")
 
-        self.file_detail_label = tk.Label(
-            self.file_info_row, text="",
-            font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
-        )
-        self.file_detail_label.pack(side="left", padx=(12, 0))
+        if count == 0:
+            empty_lbl = ctk.CTkLabel(
+                self.file_list_scroll,
+                text="ここに動画ファイルを\nドラッグ＆ドロップ",
+                font=ctk.CTkFont(family=APP_FONT, size=13), text_color=COLORS["text_dim"],
+                justify="center"
+            )
+            empty_lbl.pack(fill="both", expand=True, pady=46)
+            return
 
-        if self.input_path:
-            self._update_file_info_display()
+        for idx, path in enumerate(paths):
+            p = Path(path)
+            is_selected = (path == getattr(self, 'input_path', None))
+            item_bg = COLORS["selected_bg"] if is_selected else COLORS["bg_card"]
+            border_c = COLORS["accent"] if is_selected else COLORS["border"]
+
+            item_card = ctk.CTkFrame(
+                self.file_list_scroll, fg_color=item_bg, corner_radius=6,
+                border_width=1, border_color=border_c, cursor="hand2"
+            )
+            item_card.pack(fill="x", pady=(0, 4))
+
+            # 左側: モックアップ準拠の紫グラデーション動画アイコン
+            icon_img = get_file_icon_image(size=28, is_selected=is_selected)
+            icon_lbl = tk.Label(
+                item_card, image=icon_img, bg=item_bg, bd=0, highlightthickness=0
+            )
+            icon_lbl.image = icon_img
+            icon_lbl.pack(side="left", padx=(8, 6), pady=6)
+
+            # 中央: ファイル名 ＆ 容量
+            info_f = ctk.CTkFrame(item_card, fg_color="transparent")
+            info_f.pack(side="left", fill="x", expand=True, pady=4)
+
+            fname = p.name
+            if len(fname) > 28:
+                fname = fname[:25] + "..."
+
+            name_lbl = ctk.CTkLabel(
+                info_f, text=fname,
+                font=ctk.CTkFont(family=APP_FONT, size=12, weight="bold"), text_color=COLORS["text_bright"],
+                anchor="w"
+            )
+            name_lbl.pack(fill="x")
+
+            # 容量の取得
+            sz_str = ""
+            if os.path.exists(path):
+                sz_str = format_filesize(os.path.getsize(path))
+
+            q_info = self._queue_data.get(path, {})
+            status = q_info.get("status", "waiting")
+            status_str = ""
+            status_fg = COLORS["text_dim"]
+            if status == "converting":
+                prog = q_info.get("progress", 0)
+                status_str = f" | 変換中 {prog:.0f}%"
+                status_fg = COLORS["accent"]
+            elif status == "done":
+                status_str = " | 完了"
+                status_fg = COLORS["success"]
+            elif status == "error":
+                status_str = " | 失敗"
+                status_fg = COLORS["error"]
+
+            sub_lbl = ctk.CTkLabel(
+                info_f, text=f"{sz_str}{status_str}",
+                font=ctk.CTkFont(family=APP_FONT, size=11), text_color=status_fg,
+                anchor="w"
+            )
+            sub_lbl.pack(fill="x")
+
+            # クリックイベントのバインド
+            def _select_this(event=None, target_path=path):
+                self._select_queue_item(target_path)
+
+            for widget in (item_card, icon_lbl, info_f, name_lbl, sub_lbl):
+                widget.bind("<ButtonPress-1>", _select_this)
 
     def _update_file_info_display(self):
         """ファイル選択時の情報表示更新"""
-        if hasattr(self, 'input_paths') and len(self.input_paths) > 1:
-            if hasattr(self, 'file_path_var'):
-                self.file_path_var.set(f"{len(self.input_paths)} 個のファイルが選択されています")
-            if hasattr(self, 'file_count_label'):
-                self.file_count_label.configure(text=f"対象動画: {len(self.input_paths)} 件")
-            if hasattr(self, 'file_detail_label'):
-                self.file_detail_label.configure(text="（右側のキューで個別設定・確認が可能です）")
-        elif self.input_path:
-            p = Path(self.input_path)
-            if hasattr(self, 'file_path_var'):
-                self.file_path_var.set(str(p))
-            if hasattr(self, 'file_count_label'):
-                self.file_count_label.configure(text="対象動画: 1 件")
-            if hasattr(self, 'file_detail_label') and self.video_info:
-                info = self.video_info
-                details = [
-                    f"{info.get('width', 0)}×{info.get('height', 0)}",
-                    f"{info.get('fps', 0)} fps",
-                    f"{info.get('codec', '').upper()}",
-                    format_bitrate(info.get('bitrate', 0)),
-                    format_duration(info.get('duration', 0)),
-                    format_filesize(info.get('filesize', 0)),
-                ]
-                self.file_detail_label.configure(text=" | ".join(details))
-        else:
-            if hasattr(self, 'file_path_var'):
-                self.file_path_var.set("")
-            if hasattr(self, 'file_count_label'):
-                self.file_count_label.configure(text="対象動画: 0 件")
-            if hasattr(self, 'file_detail_label'):
-                self.file_detail_label.configure(text="")
-
+        self._refresh_file_list_display()
         self._update_hud_display()
-
-    def _update_hud_display(self):
-        """HUDミニ画面の表示内容を更新"""
-        if not hasattr(self, 'hud_file_label'):
-            return
-        if hasattr(self, 'input_paths') and len(self.input_paths) > 1:
-            self.hud_file_label.configure(text=f"対象: {len(self.input_paths)} 件の動画一括処理")
-            if hasattr(self, 'hud_reduction_label'):
-                self.hud_reduction_label.configure(text="複数ファイル一括圧縮処理中")
-        elif self.input_path:
-            p = Path(self.input_path)
-            fname = p.name
-            if len(fname) > 26:
-                fname = fname[:23] + "..."
-            orig_sz_str = format_filesize(self.video_info.get("filesize", 0)) if self.video_info else ""
-            self.hud_file_label.configure(text=f"対象: {fname} ({orig_sz_str})")
-
-            # 削減予測の表示
-            if self._target_size_mb and self.video_info and self.video_info.get("filesize", 0) > 0:
-                target_bytes = self._target_size_mb * 1024 * 1024
-                orig_b = self.video_info.get("filesize", 1)
-                saved_ratio = max(0.0, (1.0 - (target_bytes / orig_b)) * 100)
-                if hasattr(self, 'hud_reduction_label'):
-                    self.hud_reduction_label.configure(
-                        text=f"容量削減見込み: {orig_sz_str} -> {self._target_size_mb:.1f} MB (-{saved_ratio:.1f}%)"
-                    )
-            elif hasattr(self, 'hud_reduction_label'):
-                cq_val = getattr(self, '_init_cq', 25)
-                self.hud_reduction_label.configure(
-                    text=f"元容量: {orig_sz_str} (品質優先 CQ {cq_val})"
-                )
-        else:
-            self.hud_file_label.configure(text="対象: なし")
-            if hasattr(self, 'hud_reduction_label'):
-                self.hud_reduction_label.configure(text="ファイルが選択されていません")
 
     def _clear_input(self):
         """入力ファイルをクリア"""
         self.input_path = None
         self.input_paths = []
+        self._queue_data = {}
         self._update_file_info_display()
-        self._sync_queue_data()
         self._update_ui_state()
 
     def _build_mode_section(self, parent):
-        """グループ 2: 変換モード / プリセット"""
-        card = self._create_group_box(parent, "変換モード / プリセット")
-
-        # 1行目: プリセット見出し ＆ 新規プリセット保存ボタン
-        preset_header_row = tk.Frame(card, bg=COLORS["bg_card"])
-        preset_header_row.pack(fill="x", pady=(0, 6))
-
-        tk.Label(
-            preset_header_row, text="プリセット選択:",
-            font=(APP_FONT, 10, "bold"), fg=COLORS["text"], bg=COLORS["bg_card"]
-        ).pack(side="left")
-        
-        self.preset_btn = self._create_btn(
-            preset_header_row, "新規プリセット保存", self._toggle_preset_mode,
-            fg=COLORS["success"], font_size=10, padx=12, pady=3
+        """右カラム上段: 変換モード / プリセット"""
+        card = ctk.CTkFrame(
+            parent, fg_color=COLORS["bg_card"], corner_radius=12,
+            border_width=1, border_color=COLORS["border"]
         )
-        self.preset_btn.pack(side="right")
+        card.pack(fill="x", pady=(0, 8))
 
-        # 2行目: プリセット選択プルダウン（カードの左端から右端まで100%フル幅展開）
+        # 1行目: プリセット選択プルダウン（全幅展開）
+        p_row = ctk.CTkFrame(card, fg_color="transparent")
+        p_row.pack(fill="x", padx=12, pady=(10, 6))
+
+        ctk.CTkLabel(
+            p_row, text="プリセット選択:",
+            font=ctk.CTkFont(family=APP_FONT, size=12, weight="bold"), text_color=COLORS["text_bright"]
+        ).pack(side="left", padx=(0, 8))
+
         self.apply_preset_var = tk.StringVar(value="選択してください...")
-        self.preset_apply_combo = ttk.Combobox(
-            card, textvariable=self.apply_preset_var,
-            state="readonly", font=(APP_FONT, 11), height=16
+        self.preset_apply_combo = ctk.CTkComboBox(
+            p_row, variable=self.apply_preset_var,
+            values=["選択してください..."], command=self._on_preset_apply_select,
+            state="readonly",
+            font=ctk.CTkFont(family=APP_FONT, size=12),
+            fg_color=COLORS["bg_input"], border_color=COLORS["border_light"],
+            button_color=COLORS["bg_btn"], button_hover_color=COLORS["bg_btn_hover"],
+            dropdown_fg_color=COLORS["bg_card"], dropdown_hover_color=COLORS["bg_btn"],
+            corner_radius=6, height=30
         )
-        self.preset_apply_combo.pack(fill="x", pady=(0, 10))
-        self.preset_apply_combo.bind("<<ComboboxSelected>>", self._on_preset_apply_select)
-        try:
-            self.root.tk.eval(f"set preset_combo_path {str(self.preset_apply_combo)}")
-        except Exception:
-            pass
+        self.preset_apply_combo.pack(side="left", fill="x", expand=True)
 
-        # 2行目: ラジオボタン行 (容量優先 / 割合指定 / 品質優先)
-        radio_row = tk.Frame(card, bg=COLORS["bg_card"])
-        radio_row.pack(fill="x", pady=(0, 8))
+        # プルダウン全体をクリックしても反応するようにバインド
+        if hasattr(self.preset_apply_combo, "_entry"):
+            self.preset_apply_combo._entry.configure(cursor="hand2")
+            self.preset_apply_combo._entry.bind(
+                "<ButtonPress-1>",
+                lambda e: self.preset_apply_combo._open_dropdown_menu() if hasattr(self.preset_apply_combo, "_open_dropdown_menu") else None
+            )
 
+        # 2行目: 3連モード選択カードボタン群 (CQ / % / MB)
         self.mode_var = tk.StringVar(value="cq" if not self._target_size_mb else "size")
 
+        btn_row = ctk.CTkFrame(card, fg_color="transparent")
+        btn_row.pack(fill="x", padx=12, pady=(0, 6))
+
+        self.mode_buttons = {}
         modes = [
-            ("容量優先 (MB指定)", "size"),
+            ("品質優先 (CQ)", "cq"),
             ("割合指定 (%)", "percent"),
-            ("品質優先 (CQ / QVBR)", "cq"),
+            ("容量優先 (MB)", "size"),
         ]
         for text, val in modes:
-            rb = tk.Radiobutton(
-                radio_row, text=text, variable=self.mode_var, value=val,
-                font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"],
-                selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_card"],
-                activeforeground=COLORS["accent"],
-                command=self._on_mode_change
+            btn = ctk.CTkButton(
+                btn_row, text=text,
+                font=ctk.CTkFont(family=APP_FONT, size=11, weight="bold"),
+                height=34, corner_radius=6,
+                command=lambda v=val: self._select_mode(v)
             )
-            rb.pack(side="left", padx=(0, 16))
+            btn.pack(side="left", fill="x", expand=True, padx=3)
+            self.mode_buttons[val] = btn
 
         # 3行目: モードごとの設定コンテナ
-        self.mode_content_frame = tk.Frame(card, bg=COLORS["bg_card"])
-        self.mode_content_frame.pack(fill="x")
-
-        # --- 容量優先 ---
-        self.size_frame = tk.Frame(self.mode_content_frame, bg=COLORS["bg_card"])
-        s_row = tk.Frame(self.size_frame, bg=COLORS["bg_card"])
-        s_row.pack(anchor="w", fill="x")
-        tk.Label(s_row, text="目標サイズ:", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 8))
-        self.target_size_var = tk.StringVar(value=str(int(self._target_size_mb)) if self._target_size_mb else "25")
-        self.target_size_entry = tk.Entry(
-            s_row, textvariable=self.target_size_var,
-            font=(APP_FONT, 10), bg=COLORS["bg_input"], fg=COLORS["text"],
-            width=6, relief="flat", highlightbackground=COLORS["border_light"], highlightthickness=1,
-            insertbackground=COLORS["text"]
-        )
-        self.target_size_entry.pack(side="left", padx=(0, 6), ipady=3)
-        tk.Label(s_row, text="MB", font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 10))
-
-        # プリセットボタン (10MB / 25MB / 50MB / 100MB)
-        for mb in [10, 25, 50, 100]:
-            self._create_btn(
-                s_row, f"{mb}MB", lambda v=mb: self.target_size_var.set(str(v)),
-                padx=8, pady=2, font_size=9
-            ).pack(side="left", padx=(0, 4))
-
-        # --- 割合指定 ---
-        self.percent_frame = tk.Frame(self.mode_content_frame, bg=COLORS["bg_card"])
-        p_row = tk.Frame(self.percent_frame, bg=COLORS["bg_card"])
-        p_row.pack(anchor="w", fill="x")
-        tk.Label(p_row, text="目標サイズ割合:", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 8))
-        self.percent_var = tk.IntVar(value=50)
-        self.target_percent_var = self.percent_var
-        self.percent_slider = ttk.Scale(
-            p_row, from_=10, to=90, variable=self.percent_var,
-            command=self._on_percent_change, style="Custom.Horizontal.TScale"
-        )
-        self.percent_slider.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        self.percent_slider.bind("<MouseWheel>", self._on_percent_mousewheel)
-        self.percent_label = tk.Label(
-            p_row, text="50%", font=(APP_FONT, 10, "bold"),
-            fg=COLORS["accent"], bg=COLORS["bg_card"], width=6, anchor="w"
-        )
-        self.percent_label.pack(side="left")
-        self.percent_label.bind("<MouseWheel>", self._on_percent_mousewheel)
+        self.mode_content_frame = ctk.CTkFrame(card, fg_color="transparent")
+        self.mode_content_frame.pack(fill="x", padx=12, pady=(0, 8))
 
         # --- 品質優先 (CQ) ---
-        self.cq_frame = tk.Frame(self.mode_content_frame, bg=COLORS["bg_card"])
-        q_row = tk.Frame(self.cq_frame, bg=COLORS["bg_card"])
-        q_row.pack(anchor="w", fill="x")
-        tk.Label(q_row, text="品質レベル:", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 8))
+        self.cq_frame = ctk.CTkFrame(self.mode_content_frame, fg_color="transparent")
+        
+        cq_top = ctk.CTkFrame(self.cq_frame, fg_color="transparent")
+        cq_top.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(
+            cq_top, text="品質レベル:",
+            font=ctk.CTkFont(family=APP_FONT, size=12, weight="bold"), text_color=COLORS["text_dim"]
+        ).pack(side="left")
+
+        self.quality_value_label = ctk.CTkLabel(
+            cq_top, text="CQ 25 (高画質)",
+            font=ctk.CTkFont(family=APP_FONT, size=11, weight="bold"),
+            text_color=COLORS["text_bright"], fg_color=COLORS["success"],
+            corner_radius=6, padx=8, pady=2
+        )
+        self.quality_value_label.pack(side="right")
+
         self.quality_var = tk.IntVar(value=self._init_cq)
-        self.quality_slider = ttk.Scale(
-            q_row, from_=15, to=40, variable=self.quality_var,
-            command=lambda v: self._on_quality_change(int(float(v))), style="Custom.Horizontal.TScale"
+        self.quality_slider = ctk.CTkSlider(
+            self.cq_frame, from_=15, to=40, number_of_steps=25, variable=self.quality_var,
+            command=lambda v: self._on_quality_change(int(float(v))),
+            progress_color=COLORS["accent"], button_color=COLORS["accent"], button_hover_color=COLORS["accent_hover"],
+            fg_color=COLORS["bg_input"], height=10, button_length=14, button_corner_radius=7
         )
-        self.quality_slider.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        self.quality_slider.bind("<MouseWheel>", self._on_quality_mousewheel)
-        self.quality_value_label = tk.Label(
-            q_row, text="CQ 25 (高画質)",
-            font=(APP_FONT, 10, "bold"), fg=COLORS["accent"], bg=COLORS["bg_card"], width=13, anchor="w"
-        )
-        self.quality_value_label.pack(side="left")
-        self.quality_value_label.bind("<MouseWheel>", self._on_quality_mousewheel)
-        self.quality_desc_label = tk.Label(
+        self.quality_slider.pack(fill="x", pady=(2, 2))
+
+        self.quality_desc_label = ctk.CTkLabel(
             self.cq_frame, text="※ CQ/QVBR値が低いほど高画質・大ファイル、高いほど低画質・小ファイルになります",
-            font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
+            font=ctk.CTkFont(family=APP_FONT, size=10), text_color=COLORS["text_dim"]
         )
-        self.quality_desc_label.pack(anchor="w", pady=(3, 0))
+        self.quality_desc_label.pack(anchor="w")
+
+        # --- 割合指定 (%) ---
+        self.percent_frame = ctk.CTkFrame(self.mode_content_frame, fg_color="transparent")
+        
+        pct_top = ctk.CTkFrame(self.percent_frame, fg_color="transparent")
+        pct_top.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(
+            pct_top, text="目標割合:",
+            font=ctk.CTkFont(family=APP_FONT, size=12, weight="bold"), text_color=COLORS["text_dim"]
+        ).pack(side="left")
+
+        self.percent_label = ctk.CTkLabel(
+            pct_top, text="50%",
+            font=ctk.CTkFont(family=APP_FONT, size=11, weight="bold"),
+            text_color=COLORS["text_bright"], fg_color=COLORS["accent"],
+            corner_radius=6, padx=8, pady=2
+        )
+        self.percent_label.pack(side="right")
+
+        self.percent_var = tk.IntVar(value=50)
+        self.target_percent_var = self.percent_var
+        self.percent_slider = ctk.CTkSlider(
+            self.percent_frame, from_=10, to=90, number_of_steps=80, variable=self.percent_var,
+            command=lambda v: self._on_percent_change(int(float(v))),
+            progress_color=COLORS["accent"], button_color=COLORS["accent"], button_hover_color=COLORS["accent_hover"],
+            fg_color=COLORS["bg_input"], height=10, button_length=14, button_corner_radius=7
+        )
+        self.percent_slider.pack(fill="x", pady=(2, 0))
+
+        # --- 容量優先 (MB) ---
+        self.size_frame = ctk.CTkFrame(self.mode_content_frame, fg_color="transparent")
+        
+        s_row = ctk.CTkFrame(self.size_frame, fg_color="transparent")
+        s_row.pack(fill="x", pady=(4, 0))
+        ctk.CTkLabel(
+            s_row, text="目標サイズ:",
+            font=ctk.CTkFont(family=APP_FONT, size=12, weight="bold"), text_color=COLORS["text_dim"]
+        ).pack(side="left", padx=(0, 8))
+
+        self.target_size_var = tk.StringVar(value=str(int(self._target_size_mb)) if self._target_size_mb else "25")
+        self.target_size_entry = ctk.CTkEntry(
+            s_row, textvariable=self.target_size_var,
+            font=ctk.CTkFont(family=APP_FONT, size=12), fg_color=COLORS["bg_input"],
+            border_color=COLORS["border_light"], width=60, height=28, corner_radius=6
+        )
+        self.target_size_entry.pack(side="left", padx=(0, 4))
+        ctk.CTkLabel(s_row, text="MB", font=ctk.CTkFont(family=APP_FONT, size=12), text_color=COLORS["text_dim"]).pack(side="left", padx=(0, 8))
+
+        for mb in [10, 25, 50, 100]:
+            ctk.CTkButton(
+                s_row, text=f"{mb}MB", command=lambda v=mb: self.target_size_var.set(str(v)),
+                fg_color=COLORS["bg_btn"], hover_color=COLORS["bg_btn_hover"],
+                corner_radius=6, font=ctk.CTkFont(family=APP_FONT, size=11, weight="bold"),
+                width=50, height=26
+            ).pack(side="left", padx=(0, 3))
 
         self.root.after(100, self._update_apply_preset_list)
         self._on_mode_change()
 
     def _build_settings_section(self, parent):
-        """グループ 3: 詳細設定"""
-        card = self._create_group_box(parent, "詳細設定")
+        """右カラム下段: 詳細設定"""
+        card = ctk.CTkFrame(
+            parent, fg_color=COLORS["bg_card"], corner_radius=12,
+            border_width=1, border_color=COLORS["border"]
+        )
+        card.pack(fill="x")
 
-        # 1行目: 出力コーデック & 解像度
-        row1 = tk.Frame(card, bg=COLORS["bg_card"])
-        row1.pack(fill="x", pady=(0, 8))
+        # ヘッダー (詳細設定 ⌃)
+        s_hdr = ctk.CTkFrame(card, fg_color="transparent")
+        s_hdr.pack(fill="x", padx=12, pady=(10, 6))
+        ctk.CTkLabel(
+            s_hdr, text="詳細設定",
+            font=ctk.CTkFont(family=APP_FONT, size=14, weight="bold"), text_color=COLORS["text_bright"]
+        ).pack(side="left")
+        ctk.CTkLabel(
+            s_hdr, text="⌃",
+            font=ctk.CTkFont(family=APP_FONT, size=13, weight="bold"), text_color=COLORS["text_dim"]
+        ).pack(side="right")
 
-        # 出力コーデック
-        tk.Label(row1, text="出力コーデック:", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 6))
+        # 1行目: 出力コーデック (フル幅)
+        row1_codec = ctk.CTkFrame(card, fg_color="transparent")
+        row1_codec.pack(fill="x", padx=12, pady=(0, 6))
+
+        ctk.CTkLabel(
+            row1_codec, text="出力コーデック:",
+            font=ctk.CTkFont(family=APP_FONT, size=12), text_color=COLORS["text"]
+        ).pack(side="left", padx=(0, 8))
         self.codec_var = tk.StringVar(value=self._init_codec)
-        codec_combo = ttk.Combobox(row1, textvariable=self.codec_var,
-                                   values=list(CODECS.keys()), state="readonly",
-                                   font=(APP_FONT, 10), width=24, height=10)
-        codec_combo.pack(side="left", padx=(0, 16))
+        codec_combo = ctk.CTkComboBox(
+            row1_codec, variable=self.codec_var,
+            values=list(CODECS.keys()), state="readonly",
+            font=ctk.CTkFont(family=APP_FONT, size=12),
+            fg_color=COLORS["bg_input"], border_color=COLORS["border_light"],
+            button_color=COLORS["bg_btn"], button_hover_color=COLORS["bg_btn_hover"],
+            dropdown_fg_color=COLORS["bg_card"], dropdown_hover_color=COLORS["bg_btn"],
+            corner_radius=6, height=30
+        )
+        codec_combo.pack(side="left", fill="x", expand=True)
 
-        # 解像度
-        tk.Label(row1, text="解像度:", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 6))
+        # 2行目: 解像度変換 (モダンSegmentedButton)
+        row2_res = ctk.CTkFrame(card, fg_color="transparent")
+        row2_res.pack(fill="x", padx=12, pady=(0, 6))
+
+        ctk.CTkLabel(
+            row2_res, text="解像度変換:",
+            font=ctk.CTkFont(family=APP_FONT, size=12), text_color=COLORS["text"],
+            width=76, anchor="w"
+        ).pack(side="left", padx=(0, 6))
+
         self.resolution_var = tk.StringVar(value=self._init_resolution)
-        self.resolution_var.trace_add("write", lambda *a: self._on_resolution_change())
-        resolution_combo = ttk.Combobox(row1, textvariable=self.resolution_var,
-                                        values=RESOLUTIONS, state="readonly",
-                                        font=(APP_FONT, 10), width=9, height=8)
-        resolution_combo.pack(side="left")
 
-        # 2行目: FPS (フレームレート) ボタングループ
-        row2_fps = tk.Frame(card, bg=COLORS["bg_card"])
-        row2_fps.pack(fill="x", pady=(0, 8))
+        def _on_res_change(val):
+            self.resolution_var.set(val)
+            self._on_resolution_change()
 
-        tk.Label(row2_fps, text="FPS (フレームレート):", font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"]).pack(side="left", padx=(0, 10))
+        self.res_seg = ctk.CTkSegmentedButton(
+            row2_res, values=RESOLUTIONS, command=_on_res_change,
+            selected_color=COLORS["accent"], selected_hover_color=COLORS["accent_hover"],
+            unselected_color=COLORS["bg_btn"], unselected_hover_color=COLORS["bg_btn_hover"],
+            font=ctk.CTkFont(family=APP_FONT, size=11, weight="bold"),
+            corner_radius=12, height=26
+        )
+        self.res_seg.set(self._init_resolution if self._init_resolution in RESOLUTIONS else "元のまま")
+        self.res_seg.pack(side="left", fill="x", expand=True)
+
+        # 3行目: フレームレート (モダンSegmentedButton)
+        row3_fps = ctk.CTkFrame(card, fg_color="transparent")
+        row3_fps.pack(fill="x", padx=12, pady=(0, 6))
+
+        ctk.CTkLabel(
+            row3_fps, text="フレームレート:",
+            font=ctk.CTkFont(family=APP_FONT, size=12), text_color=COLORS["text"],
+            width=76, anchor="w"
+        ).pack(side="left", padx=(0, 6))
 
         self.fps_var = tk.StringVar(value=self._init_fps)
-        self.fps_buttons = {}
 
-        for fps_opt in FRAME_RATES:
-            btn = self._create_btn(
-                row2_fps, fps_opt, lambda v=fps_opt: self.fps_var.set(v),
-                padx=10, pady=2, font_size=9
-            )
-            btn.pack(side="left", padx=(0, 5))
-            self.fps_buttons[fps_opt] = btn
+        def _on_fps_change(val):
+            self.fps_var.set(val)
 
-        def _update_fps_button_styles(*_):
-            cur_fps = self.fps_var.get()
-            for opt, b in self.fps_buttons.items():
-                if opt == cur_fps:
-                    b.configure(
-                        bg=COLORS["accent"], fg=COLORS["text_bright"],
-                        activebackground=COLORS["accent_hover"], activeforeground=COLORS["text_bright"],
-                        highlightbackground=COLORS["accent"]
-                    )
-                else:
-                    b.configure(
-                        bg=COLORS["bg_btn"], fg=COLORS["text"],
-                        activebackground=COLORS["bg_btn_hover"], activeforeground=COLORS["text_bright"],
-                        highlightbackground=COLORS["border_light"]
-                    )
-
-        self.fps_var.trace_add("write", _update_fps_button_styles)
-        _update_fps_button_styles()
-
-        # 3行目: 解像度プレビュー
-        row2 = tk.Frame(card, bg=COLORS["bg_card"])
-        row2.pack(fill="x", pady=(0, 6))
-        self.resolution_preview_label = tk.Label(
-            row2, text="解像度変換: -",
-            font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"]
+        self.fps_seg = ctk.CTkSegmentedButton(
+            row3_fps, values=FRAME_RATES, command=_on_fps_change,
+            selected_color=COLORS["accent"], selected_hover_color=COLORS["accent_hover"],
+            unselected_color=COLORS["bg_btn"], unselected_hover_color=COLORS["bg_btn_hover"],
+            font=ctk.CTkFont(family=APP_FONT, size=11, weight="bold"),
+            corner_radius=12, height=26
         )
-        self.resolution_preview_label.pack(side="left")
-        self.resolution_warning_label = tk.Label(
-            row2, text="",
-            font=(APP_FONT, 10, "bold"), fg=COLORS["error"], bg=COLORS["bg_card"]
-        )
-        self.resolution_warning_label.pack(side="left", padx=(10, 0))
+        self.fps_seg.set(self._init_fps if self._init_fps in FRAME_RATES else "元のまま")
+        self.fps_seg.pack(side="left", fill="x", expand=True)
 
         # 4行目: チェックボックス (音声、元ファイル削除)
-        row3 = tk.Frame(card, bg=COLORS["bg_card"])
-        row3.pack(fill="x")
+        row4_chk = ctk.CTkFrame(card, fg_color="transparent")
+        row4_chk.pack(fill="x", padx=12, pady=(4, 10))
 
         self.audio_var = tk.BooleanVar(value=not self._init_no_audio)
-        self.audio_check_btn = tk.Checkbutton(
-            row3, text="音声を含める",
+        self.audio_check_btn = ctk.CTkCheckBox(
+            row4_chk, text="音声あり",
             variable=self.audio_var,
-            font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"],
-            selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_card"],
-            activeforeground=COLORS["accent"],
+            font=ctk.CTkFont(family=APP_FONT, size=10), text_color=COLORS["text"],
+            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
+            checkbox_width=18, checkbox_height=18, border_width=2,
+            corner_radius=4
         )
-        self.audio_check_btn.pack(side="left", padx=(0, 18))
+        self.audio_check_btn.pack(side="left", padx=(0, 14))
 
         self.auto_delete_var = tk.BooleanVar(value=False)
-        self.auto_delete_check_btn = tk.Checkbutton(
-            row3, text="変換後に元ファイルを自動でゴミ箱へ移動",
+        self.auto_delete_check_btn = ctk.CTkCheckBox(
+            row4_chk, text="元ファイルを自動でゴミ箱へ移動 ⓘ",
             variable=self.auto_delete_var,
-            font=(APP_FONT, 10), fg=COLORS["text"], bg=COLORS["bg_card"],
-            selectcolor=COLORS["bg_dark"], activebackground=COLORS["bg_card"],
-            activeforeground=COLORS["accent"],
+            font=ctk.CTkFont(family=APP_FONT, size=10), text_color=COLORS["text_dim"],
+            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
+            checkbox_width=18, checkbox_height=18, border_width=2,
+            corner_radius=4
         )
         self.auto_delete_check_btn.pack(side="left")
+
+        # 警告ラベルのみ不可視で保持
+        self.resolution_warning_label = ctk.CTkLabel(
+            card, text="",
+            font=ctk.CTkFont(family=APP_FONT, size=11, weight="bold"), text_color=COLORS["error"]
+        )
 
         self._on_resolution_change()
         self._on_quality_change(self._init_cq)
 
     def _build_progress_section(self, parent):
-        """グループ 4: 進行状況 & HUD計器表示"""
-        card = self._create_group_box(parent, "進行状況 & 計器")
-
-        self.progress_bar = ttk.Progressbar(
-            card, variable=self.progress_var,
-            maximum=100, style="Custom.Horizontal.TProgressbar"
+        """グループ 4: 進行状況 & GPU計器ダッシュボード"""
+        card = ctk.CTkFrame(
+            parent, fg_color=COLORS["bg_card"], corner_radius=12,
+            border_width=1, border_color=COLORS["border"]
         )
-        self.progress_bar.pack(fill="x", pady=(0, 6))
+        card.pack(fill="x", pady=(0, 8))
 
-        # ステータス行 (左: 変換進捗・結果, 右: GPU 3D/Encode使用率バッジ)
-        status_row = tk.Frame(card, bg=COLORS["bg_card"])
-        status_row.pack(fill="x")
+        p_container = ctk.CTkFrame(card, fg_color="transparent")
+        p_container.pack(fill="x", padx=14, pady=10)
 
-        self.gpu_status_label = tk.Label(
-            status_row, text="3D:  0.0%  |  Encode:  0.0%",
-            font=(APP_FONT, 10, "bold"), fg=COLORS["accent_cyan"], bg=COLORS["bg_card"],
-            anchor="e"
+        # --- 左側: プログレスバー & ステータス ---
+        left_prog = ctk.CTkFrame(p_container, fg_color="transparent")
+        left_prog.pack(side="left", fill="both", expand=True, padx=(0, 16))
+
+        ctk.CTkLabel(
+            left_prog, text="プログレスバー:",
+            font=ctk.CTkFont(family=APP_FONT, size=13, weight="bold"), text_color=COLORS["text_bright"]
+        ).pack(anchor="w", pady=(0, 4))
+
+        self.progress_bar = ctk.CTkProgressBar(
+            left_prog, progress_color=COLORS["accent"], fg_color=COLORS["bg_input"],
+            height=8, corner_radius=4
         )
-        self.gpu_status_label.pack(side="right", padx=(8, 0))
+        self.progress_bar.set(0.0)
+        self.progress_bar.pack(fill="x", pady=(0, 4))
 
-        self.status_label = tk.Label(
-            status_row, text="準備完了",
-            font=(APP_FONT, 10), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
+        status_subrow = ctk.CTkFrame(left_prog, fg_color="transparent")
+        status_subrow.pack(fill="x")
+
+        self.status_label = ctk.CTkLabel(
+            status_subrow, text="準備完了",
+            font=ctk.CTkFont(family=APP_FONT, size=12), text_color=COLORS["text_dim"],
             anchor="w"
         )
         self.status_label.pack(side="left", fill="x", expand=True)
 
+        self.progress_pct_label = ctk.CTkLabel(
+            status_subrow, text="0%",
+            font=ctk.CTkFont(family=APP_FONT, size=12, weight="bold"), text_color=COLORS["text_bright"],
+            anchor="e"
+        )
+        self.progress_pct_label.pack(side="right")
+
+        # --- 右側: GPU 3D / Encode 円形メーター計器 ---
+        right_gauges = ctk.CTkFrame(p_container, fg_color="transparent")
+        right_gauges.pack(side="right")
+
+        # 3D 計器
+        g_3d_box = ctk.CTkFrame(right_gauges, fg_color="transparent")
+        g_3d_box.pack(side="left", padx=(0, 14))
+
+        ctk.CTkLabel(g_3d_box, text="3D", font=ctk.CTkFont(family=APP_FONT, size=12, weight="bold"), text_color=COLORS["text_dim"]).pack(side="left", padx=(0, 6))
+        self.gpu_3d_meter = CircularProgressMeter(g_3d_box, size=46, line_width=4, fill_color=COLORS["accent"], bg=COLORS["bg_card"])
+        self.gpu_3d_meter.pack(side="left")
+
+        # Encode 計器
+        g_enc_box = ctk.CTkFrame(right_gauges, fg_color="transparent")
+        g_enc_box.pack(side="left")
+
+        ctk.CTkLabel(g_enc_box, text="Encode", font=ctk.CTkFont(family=APP_FONT, size=12, weight="bold"), text_color=COLORS["text_dim"]).pack(side="left", padx=(0, 6))
+        self.gpu_enc_meter = CircularProgressMeter(g_enc_box, size=46, line_width=4, fill_color=COLORS["accent"], bg=COLORS["bg_card"])
+        self.gpu_enc_meter.pack(side="left")
+
     def _build_bottom_bar(self, parent):
         """ボトムアクションバー"""
-        bar = tk.Frame(parent, bg=COLORS["bg_dark"])
-        bar.pack(fill="x", pady=(6, 0))
+        bar = ctk.CTkFrame(parent, fg_color="transparent")
+        bar.pack(fill="x", pady=(2, 0))
 
         # 左側サブボタン群
-        left_f = tk.Frame(bar, bg=COLORS["bg_dark"])
+        left_f = ctk.CTkFrame(bar, fg_color="transparent")
         left_f.pack(side="left")
 
-        self._create_btn(left_f, "設定", self._open_settings, font_size=10, padx=10, pady=5).pack(side="left", padx=(0, 6))
-        self._create_btn(left_f, "プリセット管理", self._open_preset_manager, font_size=10, padx=10, pady=5).pack(side="left")
+        self._create_btn(left_f, "設定", self._open_settings, font_size=12, is_bold=True, width=86, height=36).pack(side="left", padx=(0, 6))
+        self._create_btn(left_f, "プリセット管理", self._open_preset_manager, font_size=12, is_bold=True, width=120, height=36).pack(side="left")
 
         # 右側アクションボタングループ
-        right_f = tk.Frame(bar, bg=COLORS["bg_dark"])
+        right_f = ctk.CTkFrame(bar, fg_color="transparent")
         right_f.pack(side="right")
 
         self.delete_btn = self._create_btn(
             right_f, "元ファイルを削除", self._delete_original_file,
-            fg=COLORS["error"], padx=12, pady=5, font_size=10
+            fg=COLORS["error"], font_size=12, width=122, height=36
         )
 
         self.open_btn = self._create_btn(
             right_f, "フォルダを開く", self._open_output_folder,
-            fg=COLORS["text"], padx=12, pady=5, font_size=10
+            fg=COLORS["text"], font_size=12, width=112, height=36
         )
 
-        self.cancel_btn = tk.Button(
-            right_f, text="中止",
-            font=(APP_FONT, 10, "bold"), fg=COLORS["text_bright"],
-            bg=COLORS["error"], activebackground="#e11d48",
-            relief="flat", cursor="hand2", padx=16, pady=5,
-            command=self._cancel_conversion, bd=0
+        self.cancel_btn = ctk.CTkButton(
+            right_f, text="中止", command=self._cancel_conversion,
+            font=ctk.CTkFont(family=APP_FONT, size=12, weight="bold"),
+            text_color="#ffffff", fg_color=COLORS["error"], hover_color="#dc2626",
+            corner_radius=8, width=80, height=36
         )
 
-        self.convert_btn = tk.Button(
-            right_f, text="圧縮開始",
-            font=(APP_FONT, 11, "bold"), fg=COLORS["text_bright"],
-            bg=COLORS["accent"], activebackground=COLORS["accent_hover"],
-            activeforeground=COLORS["text_bright"],
-            disabledforeground=COLORS["text_dim"],
-            relief="flat", cursor="hand2", padx=20, pady=5,
-            command=self._start_conversion, bd=0
+        self.convert_btn = ctk.CTkButton(
+            right_f, text="圧縮開始", command=self._start_conversion,
+            font=ctk.CTkFont(family=APP_FONT, size=14, weight="bold"),
+            text_color="#000000", fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
+            corner_radius=8, width=140, height=38
         )
         self.convert_btn.pack(side="right", padx=(6, 0))
 
@@ -1624,15 +2127,19 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
         win.geometry(f"+{x}+{y}")
 
     def _toggle_topmost(self):
-        self.is_topmost = not self.is_topmost
+        if hasattr(self, 'pin_btn') and isinstance(self.pin_btn, ctk.CTkSwitch):
+            self.is_topmost = bool(self.pin_btn.get())
+        else:
+            self.is_topmost = not self.is_topmost
         self.root.attributes("-topmost", self.is_topmost)
-        txt = "固定解除" if self.is_topmost else "最前面固定"
-        fg_col = COLORS["accent"] if self.is_topmost else COLORS["text_dim"]
-        bg_col = COLORS["bg_input"] if self.is_topmost else COLORS["bg_btn"]
         if hasattr(self, 'pin_btn'):
-            self.pin_btn.configure(fg=fg_col, bg=bg_col, text=txt)
-        if hasattr(self, 'hud_pin_btn'):
-            self.hud_pin_btn.configure(fg=fg_col, bg=bg_col, text=txt)
+            if isinstance(self.pin_btn, ctk.CTkSwitch):
+                if self.pin_btn.get() != (1 if self.is_topmost else 0):
+                    self.pin_btn.select() if self.is_topmost else self.pin_btn.deselect()
+            elif hasattr(self.pin_btn, 'set_state'):
+                self.pin_btn.set_state(self.is_topmost)
+        if hasattr(self, 'hud_pin_btn') and hasattr(self.hud_pin_btn, 'set_state'):
+            self.hud_pin_btn.set_state(self.is_topmost)
 
     def _on_drop_enter(self, event):
         if getattr(self, 'is_converting', False):
@@ -1739,18 +2246,16 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
 
     def _update_ui_state(self):
         if not self.input_path:
-            self.convert_btn.configure(state="disabled", bg=COLORS["bg_btn"])
-            if hasattr(self, 'resolution_preview_label'):
-                self.resolution_preview_label.configure(text="解像度変換: -")
+            self.convert_btn.configure(state="disabled", fg_color="#2c3242", text_color=COLORS["text_dim"])
         else:
-            self.convert_btn.configure(state="normal", bg=COLORS["accent"])
+            self.convert_btn.configure(state="normal", fg_color=COLORS["accent"], text_color="#000000")
             self._on_resolution_change()
             if hasattr(self, 'audio_check_btn'):
                 if not self.video_info.get("has_audio"):
-                    self.audio_check_btn.configure(state="disabled", text="音声を含める (元の動画に音声なし)")
+                    self.audio_check_btn.configure(state="disabled", text="音声あり (音声なし)")
                     self.audio_var.set(False)
                 else:
-                    self.audio_check_btn.configure(state="normal", text="音声を含める")
+                    self.audio_check_btn.configure(state="normal", text="音声あり")
 
     # ─────────────────────────────────────────
     # バッチキューパネル
@@ -2198,6 +2703,11 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
                 self._apply_settings(file_settings)
 
         self._refresh_queue_display()
+        self._refresh_file_list_display()
+
+    def _select_queue_item(self, path: str):
+        """左カラムファイルアイテムのクリック処理"""
+        self._on_queue_item_click(path)
 
     # ─────────────────────────────────────────
     # 設定ダイアログ
@@ -2792,9 +3302,10 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
                 new_w = orig_w
                 new_h = orig_h
 
-        self.resolution_preview_label.configure(
-            text=f"{orig_w}×{orig_h} → {new_w}×{new_h}"
-        )
+        if hasattr(self, 'resolution_preview_label') and self.resolution_preview_label.winfo_exists():
+            self.resolution_preview_label.configure(
+                text=f"{orig_w}×{orig_h} → {new_w}×{new_h}"
+            )
         self._check_resolution_warning(new_h, new_w)
 
     def _check_resolution_warning(self, new_h=None, new_w=None):
@@ -2892,8 +3403,33 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
             self.quality_var.set(new_val)
             self._on_quality_change(new_val)
 
+    def _select_mode(self, mode: str):
+        self.mode_var.set(mode)
+        self._on_mode_change()
+
     def _on_mode_change(self, *args):
         mode = self.mode_var.get()
+
+        # 3連カードボタンの選択状態ハイライトを更新
+        if hasattr(self, 'mode_buttons'):
+            for m_key, btn in self.mode_buttons.items():
+                if m_key == mode:
+                    btn.configure(
+                        fg_color="#1e2c38",
+                        border_color=COLORS["accent"],
+                        border_width=1.5,
+                        text_color=COLORS["accent"],
+                        hover_color="#263847"
+                    )
+                else:
+                    btn.configure(
+                        fg_color=COLORS["bg_input"],
+                        border_color=COLORS["border"],
+                        border_width=1,
+                        text_color=COLORS["text_dim"],
+                        hover_color=COLORS["bg_btn_hover"]
+                    )
+
         if hasattr(self, 'size_frame'):
             self.size_frame.pack_forget()
         if hasattr(self, 'percent_frame'):
@@ -2917,20 +3453,15 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
         cq = int(float(value))
         if cq <= 20:
             desc = "最高画質"
-            color = COLORS["accent"]
         elif cq <= 25:
             desc = "高画質"
-            color = COLORS["success"]
         elif cq <= 30:
             desc = "標準"
-            color = COLORS["warning"]
         elif cq <= 35:
             desc = "低画質"
-            color = COLORS["error"]
         else:
             desc = "最低画質"
-            color = COLORS["error"]
-        self.quality_value_label.configure(text=f"CQ {cq} ({desc})", fg=color)
+        self.quality_value_label.configure(text=f"CQ {cq} ({desc})")
 
     def _open_output_folder(self):
         if hasattr(self, "output_path") and os.path.exists(self.output_path):
@@ -3730,7 +4261,7 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
         self.delete_btn.pack_forget()
         self.delete_btn.configure(text="元ファイルを削除", state="normal")
 
-        self.convert_btn.configure(state="disabled", text="変換中...", bg=COLORS["bg_btn"])
+        self.convert_btn.configure(state="disabled", text="変換中...", fg_color=COLORS["bg_btn"])
         self.cancel_btn.pack(side="right", padx=(0, 8))
 
         # タスクバー: 準備状態 (緑のアニメーション)
@@ -3761,6 +4292,10 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
                 def _update(d=u_3d, e=u_enc):
                     is_conv = getattr(self, 'is_converting', False)
                     fg_c = COLORS["accent"] if is_conv or e > 5.0 or d > 10.0 else COLORS["text_dim"]
+                    if hasattr(self, 'gpu_3d_meter') and self.gpu_3d_meter.winfo_exists():
+                        self.gpu_3d_meter.set_value(d)
+                    if hasattr(self, 'gpu_enc_meter') and self.gpu_enc_meter.winfo_exists():
+                        self.gpu_enc_meter.set_value(e)
                     if hasattr(self, 'gpu_status_label') and self.gpu_status_label.winfo_exists():
                         self.gpu_status_label.configure(
                             text=f"3D: {d:4.1f}%  |  Encode: {e:4.1f}%",
@@ -3847,7 +4382,7 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
             def _reset_btn():
                 if hasattr(self, "cancel_btn"):
                     self.cancel_btn.pack_forget()
-                self.convert_btn.configure(state="normal", text="圧縮開始", bg=COLORS["accent"])
+                self.convert_btn.configure(state="normal", text="⚡ 圧縮開始", fg_color=COLORS["accent"])
             self.root.after(0, _reset_btn)
 
     def _execute_single_ffmpeg(self, settings: dict, fallback_encoder=None) -> tuple[bool, bool, str]:
@@ -3975,11 +4510,16 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
                     status_text = f"変換完了: {format_filesize(out_size)} 所要時間: {elapsed_str}"
 
                 if hasattr(self, 'hud_speed_eta_label'):
-                    self.root.after(0, lambda e_str=elapsed_str: self.hud_speed_eta_label.configure(
-                        text=f"[完了] 所要時間: {e_str}", fg=COLORS["success"]
+                    self.root.after(0, lambda: self.hud_speed_eta_label.configure(
+                        text=f"所要時間: {elapsed_str}", fg=COLORS["text_dim"]
                     ))
 
-                self._update_status(status_text, color=COLORS["accent"], font_size=11, is_bold=True)
+                self._update_status(status_text, color=COLORS["success"])
+
+                # 個別完了通知サウンドの再生（バッチ完了時は除く）
+                if self.current_file_index + 1 < len(self.input_paths):
+                    self._play_notification_sound()
+
                 return True, False, None
 
             elif getattr(self, "is_cancelled", False):
@@ -4035,10 +4575,14 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
     def _update_throttled_ui(self, overall_progress, file_path, file_progress, status_str, speed_str="-", eta_str="-"):
         """スロットリングされたUI更新（メインスレッド用）"""
         self.progress_var.set(overall_progress)
+        if hasattr(self, 'progress_bar') and isinstance(self.progress_bar, ctk.CTkProgressBar):
+            self.progress_bar.set(min(1.0, max(0.0, overall_progress / 100.0)))
         self.taskbar_progress.set_state(TBPF_NORMAL)
         self.taskbar_progress.set_value(int(overall_progress * 10), 1000)
         self._update_queue_item_progress(file_path, file_progress)
-        self.status_label.configure(text=status_str, fg=COLORS["text_dim"], font=(APP_FONT, 9))
+        self.status_label.configure(text=status_str, text_color=COLORS["text_dim"])
+        if hasattr(self, 'progress_pct_label') and self.progress_pct_label.winfo_exists():
+            self.progress_pct_label.configure(text=f"{overall_progress:.0f}%")
         if hasattr(self, 'hud_speed_eta_label') and self.hud_speed_eta_label.winfo_exists():
             self.hud_speed_eta_label.configure(
                 text=f"進捗: {overall_progress:4.1f}%  |  速度: {speed_str}  |  残り: {eta_str}",
@@ -4116,19 +4660,25 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
             self.taskbar_progress.set_value(100, 100)
 
     def _update_progress(self, value):
-        self.root.after(0, lambda: self.progress_var.set(value))
+        def _update():
+            self.progress_var.set(value)
+            if hasattr(self, 'progress_bar') and isinstance(self.progress_bar, ctk.CTkProgressBar):
+                self.progress_bar.set(min(1.0, max(0.0, value / 100.0)))
+            if hasattr(self, 'progress_pct_label') and self.progress_pct_label.winfo_exists():
+                self.progress_pct_label.configure(text=f"{value:.0f}%")
+        self.root.after(0, _update)
 
-    def _update_status(self, text, color=None, font_size=9, is_bold=False):
+    def _update_status(self, text, color=None, font_size=11, is_bold=False):
         fg_color = color if color else COLORS["text_dim"]
-        font_weight = "bold" if is_bold else "normal"
-        self.root.after(0, lambda: self.status_label.configure(text=text, fg=fg_color, font=(APP_FONT, font_size)))
+        self.root.after(0, lambda: self.status_label.configure(text=text, text_color=fg_color))
 
     def _show_success(self):
         def _update():
-            self.progress_bar.configure(style="Custom.Horizontal.TProgressbar")
-            style = ttk.Style()
-            style.configure("Custom.Horizontal.TProgressbar", background=COLORS["success"])
-            
+            if hasattr(self, 'progress_bar') and isinstance(self.progress_bar, ctk.CTkProgressBar):
+                self.progress_bar.set(1.0)
+            if hasattr(self, 'progress_pct_label') and self.progress_pct_label.winfo_exists():
+                self.progress_pct_label.configure(text="100%")
+
             # 右側グループ内で右詰めで整然と並べる
             self.cancel_btn.pack_forget()
             self.convert_btn.pack(side="right", padx=(8, 0))
@@ -4140,6 +4690,7 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
             self.open_btn.pack(side="right", padx=(6, 0))
             
             self.taskbar_progress.set_state(TBPF_NOPROGRESS)
+            self._play_notification_sound()
             
             if self.auto_close_var.get():
                 self.root.destroy()
@@ -4147,16 +4698,20 @@ proc ttk::combobox::PlacePopdown {cb popdown} {
 
     def _show_error(self, message):
         def _update():
-            style = ttk.Style()
-            style.configure("Custom.Horizontal.TProgressbar", background=COLORS["error"])
-            
             self.taskbar_progress.set_state(TBPF_ERROR)
             self.taskbar_progress.set_value(100, 100)
-            
-            self.status_label.configure(text=f"エラー: {message}", fg=COLORS["error"], font=(APP_FONT, 9))
+            self.status_label.configure(text=f"エラー: {message}", text_color=COLORS["error"])
             messagebox.showerror("エラー", message, parent=self.root)
             
         self.root.after(0, _update)
+
+    def _play_notification_sound(self):
+        """変換完了時の通知音を再生"""
+        try:
+            import winsound
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+        except Exception:
+            pass
 
     # ─────────────────────────────────────────
     # ウィンドウを閉じるとき
@@ -4286,10 +4841,13 @@ def main():
         except Exception:
             pass
 
-    if HAS_DND:
-        root = TkinterDnD.Tk()
-    else:
-        root = tk.Tk()
+    class MainAppWindow(ctk.CTk, (TkinterDnD.DnDWrapper if HAS_DND else object)):
+        def __init__(self):
+            super().__init__()
+            if HAS_DND:
+                self.TkdndVersion = TkinterDnD._require(self)
+
+    root = MainAppWindow()
     app = QuickCompressorApp(
         root, filepaths,
         auto_start=args.auto,
