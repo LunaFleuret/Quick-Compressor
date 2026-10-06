@@ -24,7 +24,7 @@
         "resolution": "元のまま"
     },
     "c158acdb-a101-4b7f-8262-3b2170c36e99": {
-        "name": "Discord Free (10MB)",
+        "name": "Discord Free (20MB)",
         "is_custom": false,
         "audio_mode": "reencode",
         "auto_close": false,
@@ -33,10 +33,10 @@
         "no_audio": false,
         "preset": "p7",
         "resolution": "720p",
-        "target_size_mb": 9.5
+        "target_size_mb": 19.5
     },
     "46b24246-2168-4867-9f4c-a70efc2b0c37": {
-        "name": "Discord Free (10MB) (No Audio)",
+        "name": "Discord Free (20MB) (No Audio)",
         "is_custom": false,
         "audio_mode": "reencode",
         "auto_close": false,
@@ -45,7 +45,7 @@
         "no_audio": true,
         "preset": "p7",
         "resolution": "720p",
-        "target_size_mb": 9.5
+        "target_size_mb": 19.5
     },
     "c2fcf4c9-0bb5-4d5d-9b6f-fbce6e11b2f5": {
         "name": "Discord Nitro Basic (50MB)",

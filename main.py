@@ -543,44 +543,14 @@ class QuickCompressorApp:
             if self.minimize_on_right_click_var.get():
                 self.root.iconify()
 
-        # ウィンドウをマウスポインターがある位置（画面）に配置（マルチディスプレイ対応）
+        # 現在のウィンドウサイズを取得
         self.root.update_idletasks()
         w = self.root.winfo_width()
         h = self.root.winfo_height()
-        pointer_x, pointer_y = self.root.winfo_pointerxy()
-        x = pointer_x - (w // 2)
-        y = pointer_y - (h // 2)
-
-        # 画面外にはみ出ないように補正 (Windows用)
-        try:
-            import ctypes
-            from ctypes import wintypes
-            class MONITORINFO(ctypes.Structure):
-                _fields_ = [
-                    ("cbSize", wintypes.DWORD),
-                    ("rcMonitor", wintypes.RECT),
-                    ("rcWork", wintypes.RECT),
-                    ("dwFlags", wintypes.DWORD)
-                ]
-            MONITOR_DEFAULTTONEAREST = 2
-            pt = wintypes.POINT(pointer_x, pointer_y)
-            h_monitor = ctypes.windll.user32.MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST)
-            if h_monitor:
-                monitor_info = MONITORINFO()
-                monitor_info.cbSize = ctypes.sizeof(MONITORINFO)
-                if ctypes.windll.user32.GetMonitorInfoW(h_monitor, ctypes.byref(monitor_info)):
-                    work_rect = monitor_info.rcWork
-                    min_x, min_y = work_rect.left, work_rect.top
-                    max_x, max_y = work_rect.right - w, work_rect.bottom - h
-                    x = max(min_x, min(x, max_x))
-                    y = max(min_y, min(y, max_y))
-        except Exception:
-            pass
 
         # 横幅を固定し、縦幅のみ自動調整を許可（プリセットメニュー展開時にボタンが見えなくなるのを防ぐため）
         self.root.minsize(w, h)
         self.root.maxsize(w, 9999)
-        self.root.geometry(f"+{x}+{y}")
         
         # 警告ラベルなどのテキストが横幅を押し広げないように、現在の横幅に合わせて自動改行（wraplength）を設定
         if hasattr(self, 'resolution_warning_label'):
@@ -632,10 +602,15 @@ class QuickCompressorApp:
         main_frame = self.main_frame
 
         # 縦セパレーター
-        tk.Frame(outer_frame, bg=COLORS["border"], width=1).pack(side="left", fill="y")
+        self.queue_separator = tk.Frame(outer_frame, bg=COLORS["border"], width=1)
+        self.queue_separator.pack(side="left", fill="y")
 
         # 右側：バッチキューパネル
         self._build_queue_panel(outer_frame)
+
+        # ファイルが2つ以上の場合のみキューを表示
+        self._queue_panel_visible = True
+        self._update_queue_visibility(initial=True)
 
         # --- プリセット作成モード バナー (初期は非表示) ---
         self.preset_banner = tk.Frame(main_frame, bg=COLORS["success"], pady=12)
@@ -913,6 +888,7 @@ class QuickCompressorApp:
                 self.input_path = None
                 self.input_paths = []
                 self._build_empty_file_info()
+                self._update_queue_visibility()
                 self._update_ui_state()
             return
 
@@ -921,6 +897,7 @@ class QuickCompressorApp:
         self.video_info = get_video_info(self.input_path)
         self._build_populated_file_info()
         self._sync_queue_data()
+        self._update_queue_visibility()
         self._update_ui_state()
 
     def _on_drop(self, event):
@@ -1141,7 +1118,7 @@ class QuickCompressorApp:
         self.target_size_var.trace_add("write", lambda *a: self._check_resolution_warning())
         self.size_combo = ttk.Combobox(
             size_input_frame, textvariable=self.target_size_var,
-            values=["8", "10", "25", "30", "50", "100"],
+            values=["8", "10", "20", "25", "30", "50", "100"],
             font=(APP_FONT, 11), width=8
         )
         self.size_combo.pack(side="left")
@@ -1386,6 +1363,48 @@ class QuickCompressorApp:
         self._queue_hint_label.pack(anchor="w", pady=(2, 0))
 
         self._refresh_queue_display()
+
+    def _update_queue_visibility(self, initial=False):
+        """ファイルが2つ以上の場合のみ変換キューパネルを表示する"""
+        if not hasattr(self, 'queue_panel') or not hasattr(self, 'queue_separator'):
+            return
+
+        num_files = len(getattr(self, 'input_paths', []))
+        should_show = (num_files >= 2)
+
+        if initial:
+            if not should_show:
+                self.queue_separator.pack_forget()
+                self.queue_panel.pack_forget()
+                self._queue_panel_visible = False
+            else:
+                self._queue_panel_visible = True
+            return
+
+        if should_show and not getattr(self, '_queue_panel_visible', False):
+            # 2個以上になったので表示
+            self.root.maxsize(9999, 9999)
+            self.queue_separator.pack(side="left", fill="y")
+            self.queue_panel.pack(side="left", fill="y")
+            self._queue_panel_visible = True
+            self.root.update_idletasks()
+            w = self.root.winfo_reqwidth()
+            h = self.root.winfo_height()
+            self.root.minsize(w, self.root.winfo_reqheight())
+            self.root.maxsize(w, 9999)
+            self.root.geometry(f"{w}x{h}")
+        elif not should_show and getattr(self, '_queue_panel_visible', True):
+            # 1個以下になったので非表示
+            self.root.maxsize(9999, 9999)
+            self.queue_separator.pack_forget()
+            self.queue_panel.pack_forget()
+            self._queue_panel_visible = False
+            self.root.update_idletasks()
+            w = self.root.winfo_reqwidth()
+            h = self.root.winfo_height()
+            self.root.minsize(w, self.root.winfo_reqheight())
+            self.root.maxsize(w, 9999)
+            self.root.geometry(f"{w}x{h}")
 
     def _on_queue_inner_configure(self, event):
         self._queue_canvas.configure(scrollregion=self._queue_canvas.bbox("all"))
@@ -2037,7 +2056,8 @@ class QuickCompressorApp:
 
         tk.Label(
             default_codec_card,
-            text="Discord・ Steam・Xなどのデフォルトプリセットが使うコーデックを一括変更します。\n"
+            text="Discord・ Steamなどのデフォルトプリセットが使うコーデックを一括変更します。\n"
+            "（X Post は AV1 非対応のため、この設定に関わらず常に HEVC / H.265 を使用します）\n"
             "（ファイルを変更せず、起動時に動的に変換するため再インストールしても設定が保持されます）",
             font=(APP_FONT, 9), fg=COLORS["text_dim"], bg=COLORS["bg_card"],
             justify="left"
@@ -2507,9 +2527,8 @@ class QuickCompressorApp:
                 buf_multiplier = 1 if target_size_mb <= 55.0 else 2
                 
                 if is_amf:
-                    amf_rc = "vbr" if encoder == "av1_amf" else "vbr_peak"
                     cmd.extend([
-                        "-rc", amf_rc,
+                        "-rc", "vbr_peak",
                         "-b:v", f"{video_kbps}k",
                         "-maxrate", f"{video_kbps}k",
                         "-bufsize", f"{video_kbps * buf_multiplier}k"
@@ -2540,15 +2559,8 @@ class QuickCompressorApp:
                         "-bufsize", f"{orig_video_kbps * 2}k"
                     ])
                 elif is_amf:
-                    # AMD AMF のVBR上限ロック付き画質設定
-                    amf_rc = "vbr" if encoder == "av1_amf" else "vbr_peak"
-                    cmd.extend([
-                        "-rc", amf_rc,
-                        "-qp_p", str(cq),
-                        "-qp_i", str(cq),
-                        "-maxrate", f"{orig_video_kbps}k",
-                        "-bufsize", f"{orig_video_kbps * 2}k"
-                    ])
+                    # AMD AMF は固定画質(CQP)で動作させる（vbr系では -qp_p/-qp_i が効かない可能性があるため）
+                    cmd.extend(["-rc", "cqp", "-qp_p", str(cq), "-qp_i", str(cq)])
             else:
                 # 元のビットレートが取得できない場合のフォールバック
                 if encoder in ("h264_nvenc", "hevc_nvenc"):
@@ -2703,13 +2715,22 @@ class QuickCompressorApp:
                     except Exception:
                         pass
 
+                # X Post は AV1 非対応のため、コーデック一括変換の対象外とする（常に HEVC / H.265）
+                codec_locked_ids = {"f5e0f300-2cc2-404e-a8d2-325b44dad3ad"}
+                target_codec_name = None
                 if default_codec_type == "AV1":
-                    content = content.replace("HEVC / H.265", "AV1")
+                    target_codec_name = "AV1"
                 elif default_codec_type == "H.264":
-                    content = content.replace("HEVC / H.265", "H.264")
+                    target_codec_name = "H.264"
                 # "HEVC" の場合は変換なし（デフォルトのまま）
 
                 default_presets = json.loads(content)
+                if target_codec_name:
+                    for preset_id, preset_data in default_presets.items():
+                        if preset_id in codec_locked_ids:
+                            continue
+                        if isinstance(preset_data.get("codec"), str):
+                            preset_data["codec"] = preset_data["codec"].replace("HEVC / H.265", target_codec_name)
             except Exception:
                 pass
         return default_presets
@@ -3371,6 +3392,7 @@ class QuickCompressorApp:
                     })
                 self.root.after(0, self._refresh_queue_display)
 
+                status_color = COLORS["accent"]
                 if orig_size > 0 and out_size > 0:
                     saved_bytes = max(0, orig_size - out_size)
                     self.batch_saved_bytes = getattr(self, 'batch_saved_bytes', 0) + saved_bytes
@@ -3383,13 +3405,18 @@ class QuickCompressorApp:
                     ratio = out_size / orig_size * 100
                     el = int(elapsed_time)
                     elapsed_str = f"{el // 60}分{el % 60:02d}秒" if el >= 60 else f"{el}秒"
-                    status_text = f"✅ 変換完了！  {format_filesize(orig_size)} → {format_filesize(out_size)}  ({ratio:.1f}% / 元サイズ)  ⏱ {elapsed_str}"
+                    if out_size > orig_size:
+                        # 変換後のサイズが元より大きくなった場合は警告表示にする
+                        status_color = COLORS["warning"]
+                        status_text = f"⚠ 変換完了（元より大きくなりました）  {format_filesize(orig_size)} → {format_filesize(out_size)}  ({ratio:.1f}% / 元サイズ)  ⏱ {elapsed_str}"
+                    else:
+                        status_text = f"✅ 変換完了！  {format_filesize(orig_size)} → {format_filesize(out_size)}  ({ratio:.1f}% / 元サイズ)  ⏱ {elapsed_str}"
                 else:
                     el = int(elapsed_time)
                     elapsed_str = f"{el // 60}分{el % 60:02d}秒" if el >= 60 else f"{el}秒"
                     status_text = f"✅ 変換完了！  {format_filesize(out_size)}  ⏱ {elapsed_str}"
 
-                self._update_status(status_text, color=COLORS["accent"], font_size=11, is_bold=True)
+                self._update_status(status_text, color=status_color, font_size=11, is_bold=True)
                 return True, False, None
 
             elif getattr(self, "is_cancelled", False):
